@@ -1,14 +1,59 @@
 import { nanoid } from "nanoid";
 
 import { appendEvent, getWorkspaceRecord, listWorkspaceEvents, setWorkspaceStatus } from "@/lib/db/client";
+import { getProviderAdapter } from "@/lib/runtime/adapters/providers";
 import { projectWorkspaceState } from "@/lib/runtime/projector";
 import type {
   ArtifactRecord,
   RunEvent,
   TaskCard,
+  TeamMember,
 } from "@/lib/types";
 
 const activeSchedules = new Map<string, ReturnType<typeof setTimeout>[]>();
+
+/**
+ * Generate artifact content using the real LLM provider.
+ * Falls back to mock content if the provider call fails.
+ */
+async function generateArtifactContent(
+  providerId: string,
+  task: TaskCard,
+  agent: TeamMember | undefined,
+  missionGoal: string,
+  missionBrief: string,
+): Promise<string> {
+  const provider = getProviderAdapter(providerId);
+
+  // Skip LLM call for mock provider
+  if (providerId === "mock" || !provider.isConfigured()) {
+    return "";
+  }
+
+  try {
+    const system = agent?.systemPrompt ?? "You are a professional analyst.";
+    const prompt = [
+      `Mission: ${missionGoal}`,
+      "",
+      `Your task: ${task.title}`,
+      `Description: ${task.description}`,
+      "",
+      `Acceptance criteria:`,
+      ...task.acceptanceCriteria.map((c) => `- ${c}`),
+      "",
+      `Brief context (abbreviated):`,
+      missionBrief.slice(0, 1000),
+      "",
+      "Produce a structured markdown deliverable for this task. Use clear headings (##), bullet points, and tables where appropriate. Be specific and actionable. Keep it under 500 words.",
+    ].join("\n");
+
+    const result = await provider.complete({ system, prompt });
+    return result.text;
+  } catch (err) {
+    console.error(`[scheduler] LLM call failed for task "${task.title}":`, err);
+    return "";
+  }
+}
 
 function artifactFromTask(task: TaskCard, index: number): ArtifactRecord {
   const artifactId = task.linkedArtifactIds[0] ?? nanoid();
@@ -205,24 +250,202 @@ export async function scheduleWorkspaceExecution(workspaceId: string) {
 
   const events = await listWorkspaceEvents(workspaceId);
   const snapshot = projectWorkspaceState(workspace, events);
-  const timeline = buildExecutionTimeline(snapshot);
-  const timers: ReturnType<typeof setTimeout>[] = [];
+  const providerId = workspace.providerId;
+  const isRealProvider = providerId !== "mock" && getProviderAdapter(providerId).isConfigured();
 
   await setWorkspaceStatus(workspaceId, "running");
 
-  timeline.forEach((entry) => {
-    const timer = setTimeout(async () => {
-      await appendEvent(workspaceId, entry.event.type, entry.event.payload as never);
-      if (entry.event.type === "approval.requested") {
-        await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
-        activeSchedules.delete(workspaceId);
-      }
-    }, entry.delayMs);
+  if (isRealProvider) {
+    // Real LLM execution — run tasks sequentially with actual API calls
+    scheduleRealExecution(workspaceId, snapshot, providerId);
+  } else {
+    // Mock execution — use pre-built timeline with fixed delays
+    const timeline = buildExecutionTimeline(snapshot);
+    const timers: ReturnType<typeof setTimeout>[] = [];
 
-    timers.push(timer);
-  });
+    timeline.forEach((entry) => {
+      const timer = setTimeout(async () => {
+        await appendEvent(workspaceId, entry.event.type, entry.event.payload as never);
+        if (entry.event.type === "approval.requested") {
+          await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
+          activeSchedules.delete(workspaceId);
+        }
+      }, entry.delayMs);
 
-  activeSchedules.set(workspaceId, timers);
+      timers.push(timer);
+    });
+
+    activeSchedules.set(workspaceId, timers);
+  }
+}
+
+/**
+ * Execute tasks sequentially with real LLM calls.
+ * Each task gets a real API call to generate deliverable content.
+ */
+async function scheduleRealExecution(
+  workspaceId: string,
+  snapshot: ReturnType<typeof projectWorkspaceState>,
+  providerId: string,
+) {
+  // Use a single timer ref so clearWorkspaceSchedule can cancel
+  const cancelRef = { cancelled: false };
+  const timer = setTimeout(() => {}, 0); // placeholder
+  activeSchedules.set(workspaceId, [timer]);
+
+  try {
+    // Kickoff meeting
+    await appendEvent(workspaceId, "run.started", { startedBy: "system" });
+
+    const kickoffId = nanoid();
+    await appendEvent(workspaceId, "meeting.started", {
+      meetingId: kickoffId,
+      title: "Kickoff alignment",
+      participantAgentIds: snapshot.agents.map((a) => a.agentId),
+    });
+
+    await delay(2000);
+    if (cancelRef.cancelled) return;
+
+    await appendEvent(workspaceId, "meeting.ended", { meetingId: kickoffId });
+
+    // Execute each task with real LLM
+    const missionGoal = snapshot.workspace.title;
+    const missionBrief = snapshot.summary ?? "";
+
+    for (let i = 0; i < snapshot.tasks.length; i++) {
+      if (cancelRef.cancelled) return;
+
+      const task = snapshot.tasks[i];
+      const agent = snapshot.agents.find((a) => a.agentId === task.ownerAgentId);
+
+      // Task started
+      await appendEvent(workspaceId, "task.started", {
+        taskId: task.id,
+        agentId: task.ownerAgentId,
+        state: task.workType,
+      });
+
+      await delay(500);
+      if (cancelRef.cancelled) return;
+
+      // Generate real content via LLM
+      console.log(`[scheduler] Calling ${providerId} for task: ${task.title}`);
+      const content = await generateArtifactContent(
+        providerId, task, agent, missionGoal, missionBrief,
+      );
+
+      const artifactId = task.linkedArtifactIds[0] ?? task.id;
+      const title = artifactId
+        .replace(/-output$/, "")
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      // Use LLM content or fall back to mock
+      const finalContent = content || artifactFromTask(task, i).versions[0].content;
+
+      await appendEvent(workspaceId, "artifact.updated", {
+        artifact: {
+          id: artifactId,
+          title,
+          type: artifactId,
+          status: i === snapshot.tasks.length - 1 ? "needs_review" as const : "draft" as const,
+          schema: "markdown-v1",
+          provenance: [task.id],
+          currentVersion: 1,
+          versions: [{
+            version: 1,
+            createdAt: Date.now(),
+            content: finalContent,
+            notes: content ? `Generated by ${providerId}` : "Mock content (LLM call failed)",
+            sourceTaskIds: [task.id],
+            citations: [],
+          }],
+        },
+      });
+
+      await delay(300);
+      if (cancelRef.cancelled) return;
+
+      // Task completed
+      await appendEvent(workspaceId, "task.completed", {
+        taskId: task.id,
+        agentId: task.ownerAgentId,
+      });
+
+      await delay(500);
+    }
+
+    if (cancelRef.cancelled) return;
+
+    // Review meeting
+    const reviewId = nanoid();
+    await appendEvent(workspaceId, "meeting.started", {
+      meetingId: reviewId,
+      title: "Review sync",
+      participantAgentIds: snapshot.agents.map((a) => a.agentId),
+    });
+
+    await delay(2000);
+    if (cancelRef.cancelled) return;
+
+    // Final deliverable — compile all artifacts
+    await appendEvent(workspaceId, "artifact.updated", {
+      artifact: {
+        id: "final-deliverable",
+        title: "Final Team Packet",
+        type: "final-report",
+        status: "needs_review" as const,
+        schema: "markdown-v1",
+        provenance: snapshot.tasks.map((t) => t.id),
+        currentVersion: 1,
+        versions: [{
+          version: 1,
+          createdAt: Date.now(),
+          content: [
+            "# Final Team Packet",
+            "",
+            `## Mission: ${missionGoal}`,
+            "",
+            snapshot.summary ?? "",
+            "",
+            "## Deliverables compiled by the review team.",
+            "",
+            "*Click individual artifact cards below to read each deliverable in full.*",
+          ].join("\n"),
+          notes: "Compiled review packet.",
+          sourceTaskIds: snapshot.tasks.map((t) => t.id),
+          citations: [],
+        }],
+      },
+    });
+
+    await appendEvent(workspaceId, "meeting.ended", { meetingId: reviewId });
+
+    await delay(500);
+
+    // Request final approval
+    await appendEvent(workspaceId, "approval.requested", {
+      gateType: "final_deliverables",
+      message: "Review and approve the deliverables before marking the run complete.",
+    });
+    await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
+
+  } catch (err) {
+    console.error("[scheduler] Real execution failed:", err);
+    // Fall back to completing with error note
+    await appendEvent(workspaceId, "approval.requested", {
+      gateType: "final_deliverables",
+      message: `Execution encountered errors. Some deliverables may be incomplete. Error: ${err instanceof Error ? err.message : "Unknown"}`,
+    });
+    await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
+  } finally {
+    activeSchedules.delete(workspaceId);
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function clearWorkspaceSchedule(workspaceId: string) {

@@ -219,8 +219,8 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
 
           // --- Desks (LPC tile images) ---
           for (const desk of cfg.desks) {
-            const dx = (desk.col - 1) * TILE;
-            const dy = (desk.row - 1) * TILE;
+            const dx = desk.col * TILE;
+            const dy = desk.row * TILE;
 
             // Place desk tile image centered on the desk area
             try {
