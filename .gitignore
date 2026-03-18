@@ -60,3 +60,4 @@ codex-instructions.md
 *.pem
 *.tsbuildinfo
 next-env.d.ts
+.paperclip-data/
