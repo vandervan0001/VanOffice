@@ -272,49 +272,61 @@ function buildTeamProposal(input: CreateWorkspaceInput, assumptions: string[]): 
     .map((n) => n.deliverable.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
 
   const name = `${slugFromTitle(input.missionGoal || "Mission")} Crew`;
-  // Cache needs so buildTaskBoard can use them without re-analyzing
-  needsCache.set(name, needs);
 
   return { name, rationale, estimatedOutputs, roles };
 }
 
-// Store the needs analysis alongside the proposal so the task board can use it.
-// This avoids re-analyzing. We attach it to a module-level cache keyed by proposal name.
-const needsCache = new Map<string, ReturnType<typeof analyzeBriefNeeds>>();
-
 function buildTaskBoard(teamProposal: TeamProposal): TaskCard[] {
   const tasks: TaskCard[] = [];
-  const needs = needsCache.get(teamProposal.name) ?? [];
 
-  // Each role maps 1:1 to a need (same order as buildTeamProposal)
+  // Derive a task for each role based on role properties.
+  // First role = mission lead (phase 0), last role = reviewer (phase 3),
+  // middle roles get phase based on their responsibilities.
   for (let i = 0; i < teamProposal.roles.length; i++) {
     const role = teamProposal.roles[i];
-    const need = needs[i];
-    if (!need) continue;
+    const isFirst = i === 0;
+    const isLast = i === teamProposal.roles.length - 1;
 
-    const artifactId = need.deliverable;
-    const isReviewer = need.phase === 3;
-    const isMissionLead = need.phase === 0;
+    // Determine work type from role title/responsibilities
+    const lowerTitle = role.title.toLowerCase();
+    const lowerResp = role.responsibilities.join(" ").toLowerCase();
+    const isResearch = lowerTitle.includes("research") || lowerTitle.includes("analyst") || lowerTitle.includes("advisor") || lowerResp.includes("research") || lowerResp.includes("gather") || lowerResp.includes("analyze");
+    const isPlanning = isFirst || lowerTitle.includes("lead") || lowerTitle.includes("planner") || lowerTitle.includes("coordinator") || lowerTitle.includes("manager");
 
-    // Dependencies: each phase depends on the previous phase
-    const deps = isReviewer
-      ? tasks.map((t) => t.id) // reviewer depends on everything
-      : tasks.filter((_, j) => {
-          const prevNeed = needs[j];
-          return prevNeed && prevNeed.phase === need.phase - 1;
-        }).map((t) => t.id);
+    const workType: TaskCard["workType"] = isFirst
+      ? "planning"
+      : isLast
+        ? "writing"
+        : isResearch
+          ? "researching"
+          : "writing";
+
+    const artifactId = isFirst
+      ? "mission-framework"
+      : isLast
+        ? "final-deliverable"
+        : `${slugFromTitle(role.title)}-output`;
+
+    // Dependencies: first has none, last depends on all, others depend on first
+    const deps = isFirst
+      ? []
+      : isLast
+        ? tasks.map((t) => t.id)
+        : tasks.length > 0 ? [tasks[0].id] : [];
+
+    const purpose = role.responsibilities[0] ?? role.title;
 
     tasks.push({
       id: nanoid(),
-      title: isMissionLead
+      title: isFirst
         ? "Frame the mission and define success criteria"
-        : isReviewer
+        : isLast
           ? "Review all deliverables and prepare the final packet"
-          : `${role.title}: ${need.purpose.split(".")[0]}`,
+          : `${role.title}: ${purpose.split(".")[0]}`,
       ownerAgentId: role.agentId,
       status: "todo",
-      description: need.purpose,
-      workType: need.workType,
+      description: purpose,
+      workType,
       acceptanceCriteria: [
         "Deliverable is complete and addresses the brief's requirements.",
         "Sources and assumptions are documented.",
@@ -651,11 +663,9 @@ export async function approveGate(
     await setWorkspaceStatus(workspaceId, "awaiting_plan_approval");
   } else if (gateType === "execution_plan") {
     await setWorkspaceStatus(workspaceId, "running");
-    if (await isPaperclipAvailable()) {
-      await executePaperclipWorkspace(workspaceId);
-    } else {
-      await scheduleWorkspaceExecution(workspaceId);
-    }
+    // Always use our scheduler (supports both mock and real LLM execution).
+    // Paperclip integration available for future orchestration mode.
+    await scheduleWorkspaceExecution(workspaceId);
   } else if (gateType === "final_deliverables") {
     clearWorkspaceSchedule(workspaceId);
     clearPaperclipSchedule(workspaceId);
