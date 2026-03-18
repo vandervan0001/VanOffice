@@ -16,13 +16,15 @@ vi.mock("@/components/sidebar/approval-sidebar", () => ({
 vi.mock("@/components/outputs/artifact-panel", () => ({
   ArtifactPanel: () => <div data-testid="artifact-panel">Artifacts</div>,
 }));
+vi.mock("@/components/sidebar/command-input", () => ({
+  CommandInput: () => <div data-testid="command-input">Commands</div>,
+}));
 
 const providers = [{ id: "mock", label: "Mock", configured: true }];
 
 describe("WorkspaceShell", () => {
-  it("renders office view and composer when no workspace", () => {
+  it("renders composer when no workspace", () => {
     render(<WorkspaceShell providers={providers} />);
-    expect(screen.getByTestId("office-view")).toBeTruthy();
     expect(screen.getByTestId("mission-composer")).toBeTruthy();
   });
 });

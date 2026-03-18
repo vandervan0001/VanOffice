@@ -21,13 +21,10 @@ async function fetchSnapshot(workspaceId: string): Promise<WorkspaceSnapshot> {
 
 function deriveSuggestions(snapshot: WorkspaceSnapshot | null): string[] {
   if (!snapshot) return [];
-
   const status = snapshot.workspace.status;
 
-  // Has team but no execution yet
   if (status === "awaiting_team_approval" || status === "awaiting_plan_approval") {
     const base = ["Start execution", "Adjust team composition", "Add constraints"];
-    // Add mission-specific suggestions from output expectations
     if (snapshot.expectedOutputs.length > 0) {
       const outputSuggestions = snapshot.expectedOutputs.slice(0, 2).map(
         (output) => `Draft ${output.toLowerCase()}`
@@ -37,12 +34,10 @@ function deriveSuggestions(snapshot: WorkspaceSnapshot | null): string[] {
     return base;
   }
 
-  // Running
   if (status === "running") {
     return ["Check progress", "Prioritize deliverables", "Request status update"];
   }
 
-  // Complete or awaiting final approval
   if (status === "complete" || status === "awaiting_final_approval") {
     return ["Export all deliverables", "Start follow-up mission", "Generate executive summary"];
   }
@@ -54,9 +49,27 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
   const [busyGate, setBusyGate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paperclipStatus, setPaperclipStatus] = useState<"checking" | "online" | "offline">("checking");
 
   const workspaceId = workspace?.workspace.id;
   const suggestions = deriveSuggestions(workspace);
+
+  // Check Paperclip availability on mount
+  useEffect(() => {
+    async function checkPaperclip() {
+      try {
+        const res = await fetch("/api/workspaces/paperclip-status");
+        const data = await res.json() as { available: boolean };
+        setPaperclipStatus(data.available ? "online" : "offline");
+      } catch {
+        setPaperclipStatus("offline");
+      }
+    }
+    checkPaperclip();
+    // Re-check every 30 seconds
+    const interval = setInterval(checkPaperclip, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const id = new URL(window.location.href).searchParams.get("workspace");
@@ -116,16 +129,46 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     setError(null);
   }
 
-  // Pre-workspace: empty office with composer overlay
+  // Paperclip status banner
+  const paperclipBanner = paperclipStatus === "offline" ? (
+    <div className="mx-auto mb-3 max-w-[1600px] rounded-xl border border-[var(--attention)] bg-[var(--attention-bg)] px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className="text-lg">⚠️</span>
+        <div>
+          <p className="text-sm font-medium text-[var(--attention)]">
+            Paperclip is not running
+          </p>
+          <p className="text-xs text-[var(--text-secondary)]">
+            The app needs Paperclip AI for real agent orchestration. Running in demo/mock mode.
+            Start Paperclip with: <code className="rounded bg-white/50 px-1 py-0.5 text-[10px] font-mono">npm run paperclip</code>
+          </p>
+        </div>
+        <span className="ml-auto shrink-0 rounded-full bg-[var(--attention)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--attention)]">
+          Mock mode
+        </span>
+      </div>
+    </div>
+  ) : paperclipStatus === "online" ? (
+    <div className="mx-auto mb-3 max-w-[1600px]">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)]">
+        <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
+        Paperclip connected
+      </span>
+    </div>
+  ) : null;
+
+  // Pre-workspace: composer only (no office background — cleaner)
   if (!workspace) {
     return (
-      <main className="min-h-screen bg-[var(--background)]">
-        <div className="relative mx-auto max-w-[1200px] px-4 py-8">
-          <OfficeView snapshot={null} />
-          <MissionComposer providers={providers} onCreated={handleCreated} />
+      <main className="min-h-screen bg-[var(--background)] p-4">
+        {paperclipBanner}
+        <div className="mx-auto max-w-xl py-12">
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm">
+            <MissionComposer providers={providers} onCreated={handleCreated} />
+          </div>
         </div>
         {error && (
-          <div className="mx-auto max-w-[1200px] px-4">
+          <div className="mx-auto max-w-xl">
             <p className="mt-4 rounded-xl bg-[var(--attention-bg)] p-3 text-sm text-[var(--attention)]">
               {error}
             </p>
@@ -136,29 +179,36 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
   }
 
   // Active workspace: 50/50 layout with margins
-  // Left = office (top) + deliverables (bottom)
-  // Right = validations card + chatbox card (separate)
   return (
     <main className="h-screen bg-[var(--background)] p-4">
-      {/* New team button */}
-      <div className="mx-auto mb-2 max-w-[1600px]">
+      {/* Top bar: New team + Paperclip status */}
+      <div className="mx-auto mb-2 flex max-w-[1600px] items-center justify-between">
         <button
           type="button"
           onClick={handleNewTeam}
           className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-secondary)] transition hover:border-[var(--foreground)]/30 hover:text-[var(--foreground)]"
         >
-          &larr; New team
+          ← New team
         </button>
+        {paperclipStatus === "online" && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
+            Paperclip
+          </span>
+        )}
+        {paperclipStatus === "offline" && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--attention)]/30 bg-[var(--attention-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--attention)]">
+            Mock mode
+          </span>
+        )}
       </div>
-      <div className="mx-auto flex h-[calc(100%-2rem)] max-w-[1600px] gap-4">
+
+      <div className="mx-auto flex h-[calc(100%-2.5rem)] max-w-[1600px] gap-4">
         {/* LEFT COLUMN: office + deliverables */}
         <div className="flex flex-1 flex-col gap-4">
-          {/* Office */}
           <div className="flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
             <OfficeView snapshot={workspace} />
           </div>
-
-          {/* Deliverables */}
           <div className="shrink-0">
             <ArtifactPanel artifacts={workspace.artifacts} />
           </div>
@@ -166,7 +216,6 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
 
         {/* RIGHT COLUMN: validations card + chatbox card */}
         <div className="flex w-[400px] shrink-0 flex-col gap-4">
-          {/* Validations card — scrollable */}
           <div className="flex-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <ApprovalSidebar
               snapshot={workspace}
@@ -174,8 +223,6 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
               onApprove={approve}
             />
           </div>
-
-          {/* Chatbox card — separate */}
           <div className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <CommandInput suggestions={suggestions} />
           </div>
