@@ -1,4 +1,12 @@
-# Session Notes — 2026-03-18
+# Session Notes — 2026-03-18 (UPDATED)
+
+## STATUS: REAL GEMINI EXECUTION WORKING
+
+End-to-end verified: brief → generative team → approve → Gemini generates real deliverables (4000+ chars each) → artifacts appear in UI. Select "Gemini" as provider with your API key in `.env.local`.
+
+---
+
+# Original session notes below
 
 ## What was built
 
