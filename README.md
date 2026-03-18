@@ -86,6 +86,13 @@ npm run test
 npm run build
 ```
 
+Useful local maintenance commands:
+
+```bash
+npm run clean:metadata
+npm run clean:next
+```
+
 ### Manual product test (end-to-end)
 
 1. Start dev server:
@@ -139,12 +146,17 @@ The repository ignores local-only files, including:
 - `database is locked` during builds:
   - fixed in current runtime by lazy DB initialization and busy timeout
   - if still seen, ensure no parallel process is writing the same DB file
+- `Failed to open database` on `npm run dev` (Turbopack cache issue on external drives):
+  - run `npm run clean:metadata`
+  - run `npm run clean:next`
+  - use default `npm run dev` (webpack mode)
+  - optional fast mode remains available via `npm run dev:turbo`
 - External drives creating `._*` metadata files:
   - these are ignored by git and should not be committed
   - if you need to clean them:
 
 ```bash
-find . -name '._*' -delete
+npm run clean:metadata
 ```
 
 ## Publish to GitHub

@@ -13,6 +13,30 @@ interface MissionComposerProps {
   onCreated: (workspaceId: string) => void;
 }
 
+const DEMO_GOAL = "Create a marketing intelligence packet";
+const DEMO_OUTPUTS = "Research brief, action plan, and a polished final packet";
+const DEMO_BRIEF = [
+  "Context:",
+  "We are launching a B2B AI operations tool for small agencies in Europe.",
+  "Current traction is weak because messaging is generic and positioning is unclear.",
+  "",
+  "Mission:",
+  "Build a clear market intelligence packet to sharpen positioning and go-to-market moves for the next 6 weeks.",
+  "",
+  "Constraints:",
+  "- Keep recommendations realistic for a 2-person founding team.",
+  "- Prioritize actions that can be executed within 10 business days.",
+  "- Avoid assumptions that require paid enterprise data sources.",
+  "",
+  "Audience:",
+  "Founders, growth lead, and one freelance content operator.",
+  "",
+  "Success criteria:",
+  "- One concise market snapshot.",
+  "- One ranked action plan with rationale.",
+  "- One final synthesis packet ready for internal review and execution kickoff.",
+].join("\n");
+
 export function MissionComposer({
   providers,
   onCreated,
@@ -21,11 +45,9 @@ export function MissionComposer({
     () => providers.find((provider) => provider.configured)?.id ?? providers[0]?.id ?? "mock",
     [providers],
   );
-  const [brief, setBrief] = useState("");
-  const [goal, setGoal] = useState("Create a marketing intelligence packet");
-  const [outputs, setOutputs] = useState(
-    "Research brief, action plan, and a polished final packet",
-  );
+  const [brief, setBrief] = useState(DEMO_BRIEF);
+  const [goal, setGoal] = useState(DEMO_GOAL);
+  const [outputs, setOutputs] = useState(DEMO_OUTPUTS);
   const [providerId, setProviderId] = useState(defaultProvider);
   const [files, setFiles] = useState<File[]>([]);
   const [pending, setPending] = useState(false);
@@ -100,7 +122,20 @@ export function MissionComposer({
       </div>
 
       <label className="grid gap-2">
-        <span className="text-sm text-[#e7e2d2]">Mission brief</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-[#e7e2d2]">Mission brief</span>
+          <button
+            type="button"
+            onClick={() => {
+              setGoal(DEMO_GOAL);
+              setOutputs(DEMO_OUTPUTS);
+              setBrief(DEMO_BRIEF);
+            }}
+            className="rounded-full border border-white/20 px-3 py-1 text-[11px] uppercase tracking-[0.15em] text-[#e3ddce] transition hover:border-[#f2c14e] hover:text-[#f2c14e]"
+          >
+            Reset demo
+          </button>
+        </div>
         <textarea
           className="min-h-40 rounded-[24px] border border-white/10 bg-[#16181d] px-4 py-4 text-sm leading-6 text-white outline-none transition focus:border-[#f2c14e]"
           value={brief}
@@ -108,6 +143,9 @@ export function MissionComposer({
           placeholder="Describe the business need, constraints, audience, and success criteria."
           required
         />
+        <span className="text-xs text-[#8d8a83]">
+          A ready-to-run demo brief is preloaded so you can test immediately.
+        </span>
       </label>
 
       <div className="grid gap-3 md:grid-cols-[1fr_240px]">
