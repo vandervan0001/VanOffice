@@ -20,7 +20,7 @@ function generateDesks(count: number): GridPosition[] {
   const desks: GridPosition[] = [];
   const DESK_COLS = [1, 8, 15, 22];
   const FIRST_DESK_ROW = 3;
-  const ROW_SPACING = 4;
+  const ROW_SPACING = 3; // Compact rows
 
   for (let i = 0; i < count; i++) {
     const colIndex = i % DESK_COLS.length;
@@ -70,16 +70,16 @@ export function generateOfficeConfig(teamSize: number): OfficeConfig {
   const desksPerRow = 4;
   const deskRows = Math.ceil(teamSize / desksPerRow);
   const FIRST_DESK_ROW = 3;
-  const ROW_SPACING = 4;
+  const ROW_SPACING = 3; // Compact rows
   const deskZoneEnd = FIRST_DESK_ROW + deskRows * ROW_SPACING;
-  const meetingStartRow = deskZoneEnd + 1;
+  const meetingStartRow = deskZoneEnd;
 
   const needsSecondMeeting = teamSize > 8;
-  const meetingZoneHeight = 5;
-  const breakRoomHeight = 3;
+  const meetingZoneHeight = 4;
+  const breakRoomHeight = 2;
   const breakRoomStartRow = meetingStartRow + meetingZoneHeight;
-  const totalRows = Math.max(16, breakRoomStartRow + breakRoomHeight + 1);
-  const totalCols = 28; // Wide enough for 4 desk columns + corridors
+  const totalRows = breakRoomStartRow + breakRoomHeight + 1;
+  const totalCols = 28;
 
   const desks = generateDesks(teamSize);
   const meetingSeats = generateMeetingSeats(teamSize, meetingStartRow + 1);
