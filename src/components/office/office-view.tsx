@@ -109,28 +109,38 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
       <Furniture type="poster" row={0.5} col={15} />
       <Furniture type="monitor-big" row={-0.5} col={17} />
 
+      {/* Bookshelf — against the left wall, row 3 col 0, away from desks (desks start col 2+) */}
+      <Furniture type="bookshelf" row={2.5} col={0} />
+
       {/* Dynamic desks — placed first so decorations avoid them */}
       {config.desks.map((desk, i) => (
         <Furniture key={`desk-${i}`} type="desk" row={desk.row - 1} col={desk.col - 1} />
       ))}
 
+      {/* Extra empty desks to fill out the open-plan feel (col 0 side) */}
+      {teamSize <= 6 && <Furniture type="desk" row={6} col={0} />}
+      {teamSize <= 9 && <Furniture type="desk" row={9} col={0} />}
+      {teamSize <= 3 && <Furniture type="desk" row={6} col={5} />}
+
       {/* Right-side utility corridor (col 17-21) — below the wall */}
       <Furniture type="whiteboard" row={3} col={17} />
-      <Furniture type="coffee" row={4.5} col={18} />
-      <Furniture type="water-cooler" row={4.5} col={20} />
+      <Furniture type="coffee" row={5} col={18} />
+      <Furniture type="water-cooler" row={5} col={20} />
       <Furniture type="printer" row={7} col={18} />
       <Furniture type="filing-cabinet" row={7} col={21} />
-      <Furniture type="lamp" row={9} col={21} />
+      <Furniture type="filing-cabinet" row={9} col={21} />
+      <Furniture type="lamp" row={9} col={17} />
 
-      {/* Plants — tucked into corners and gaps, away from desks */}
-      <Furniture type="plant" row={3} col={0} />
+      {/* Plants — tucked into corners and wall edges, away from desks */}
+      <Furniture type="plant" row={5} col={0} />
       <Furniture type="plant" row={3} col={16} />
-      {teamSize > 5 && <Furniture type="plant" row={6} col={0} />}
-      {teamSize > 5 && <Furniture type="plant" row={6} col={16} />}
-      {teamSize > 9 && <Furniture type="plant" row={9} col={0} />}
+      {teamSize > 5 && <Furniture type="plant" row={8} col={0} />}
+      {teamSize > 5 && <Furniture type="plant" row={8} col={16} />}
+      {teamSize > 9 && <Furniture type="plant" row={11} col={0} />}
+      <Furniture type="plant" row={11} col={16} />
 
-      {/* Bookshelf — along the wall ABOVE the first desk row */}
-      <Furniture type="bookshelf" row={3} col={1} />
+      {/* Floor lamp in bottom-left corner */}
+      <Furniture type="lamp" row={config.rows - 3} col={0} />
 
       {/* Meeting rooms */}
       {config.meetingRooms.map((room, i) => (
@@ -162,9 +172,10 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
         </div>
       ))}
 
-      {/* Break room */}
+      {/* Break room / Kitchen / Lounge — always present */}
       {config.breakRoom && (
         <div>
+          {/* Floor tint */}
           <div
             className="absolute rounded-lg"
             style={{
@@ -176,9 +187,15 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
               border: "1px dashed rgba(80,160,100,0.12)",
             }}
           />
-          <Furniture type="coffee" row={config.breakRoom.row + 0.5} col={config.breakRoom.col + 1} />
-          <Furniture type="couch" row={config.breakRoom.row + 1.5} col={config.breakRoom.col + 2} />
-          <Furniture type="plant" row={config.breakRoom.row + 0.5} col={config.breakRoom.col + 4} />
+          {/* Kitchen area: coffee machine + water cooler */}
+          <Furniture type="coffee" row={config.breakRoom.row + 0.3} col={config.breakRoom.col + 0.5} />
+          <Furniture type="water-cooler" row={config.breakRoom.row + 0.3} col={config.breakRoom.col + 2} />
+          {/* Lounge area: couch + rug */}
+          <Furniture type="rug" row={config.breakRoom.row + 1} col={config.breakRoom.col + 3} />
+          <Furniture type="couch" row={config.breakRoom.row + 1.5} col={config.breakRoom.col + 3.5} />
+          {/* Plants and lamp for ambience */}
+          <Furniture type="plant" row={config.breakRoom.row + 0.3} col={config.breakRoom.col + 6.5} />
+          <Furniture type="lamp" row={config.breakRoom.row + 2} col={config.breakRoom.col + 7} />
           {/* Break room label */}
           <div
             className="absolute text-[8px] font-medium text-[var(--text-muted)]"
@@ -187,9 +204,14 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
               left: config.breakRoom.col * CELL,
             }}
           >
-            Break Room
+            Kitchen &amp; Lounge
           </div>
         </div>
+      )}
+
+      {/* Lounge rug near meeting area (right of meeting rooms, fills gap) */}
+      {!config.meetingRooms[1] && (
+        <Furniture type="rug" row={config.meetingRooms[0].row + 0.5} col={14} />
       )}
 
       {/* Agents */}

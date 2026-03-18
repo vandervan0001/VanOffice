@@ -64,7 +64,8 @@ function generateMeetingSeats(count: number, meetingRow: number): GridPosition[]
 
 /**
  * Generate an office that scales with team size.
- * 2-5: compact. 6-10: standard with break room. 11+: big open space, 2 meeting rooms.
+ * All sizes get a break room and filled layout — no large empty gaps.
+ * 2-5: compact. 6-10: standard. 11+: big open space, 2 meeting rooms.
  */
 export function generateOfficeConfig(teamSize: number): OfficeConfig {
   const deskRows = Math.ceil(teamSize / 3);
@@ -73,8 +74,10 @@ export function generateOfficeConfig(teamSize: number): OfficeConfig {
 
   const needsSecondMeeting = teamSize > 8;
   const meetingZoneHeight = 5;
-  const hasBreakRoom = teamSize > 5;
-  const totalRows = Math.max(14, meetingStartRow + meetingZoneHeight + (hasBreakRoom ? 4 : 1));
+  // Break room is always present — even small teams need a kitchen/lounge
+  const breakRoomHeight = 4;
+  const breakRoomStartRow = meetingStartRow + meetingZoneHeight;
+  const totalRows = Math.max(14, breakRoomStartRow + breakRoomHeight + 1);
   const totalCols = 22;
 
   const desks = generateDesks(teamSize);
@@ -87,9 +90,7 @@ export function generateOfficeConfig(teamSize: number): OfficeConfig {
     meetingRooms.push({ row: meetingStartRow, col: 14, w: 7, h: 4.5 });
   }
 
-  const breakRoom = hasBreakRoom
-    ? { row: meetingStartRow + meetingZoneHeight, col: 2, w: 6, h: 3 }
-    : null;
+  const breakRoom = { row: breakRoomStartRow, col: 1, w: 8, h: breakRoomHeight };
 
   return { cols: totalCols, rows: totalRows, desks, meetingSeats, meetingRooms, breakRoom };
 }
