@@ -7,6 +7,8 @@ import {
   agentGridPosition,
   type OfficeConfig,
 } from "@/lib/state/office-layout";
+import { findPath } from "@/lib/state/pathfinding";
+import { buildCollisionMap } from "@/lib/state/collision-map";
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                              */
@@ -78,6 +80,9 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
         private worldW = 0;
         private worldH = 0;
 
+        /* collision map for A* pathfinding */
+        private collisionBlocked: Set<string> = new Set();
+
         /* per-agent runtime */
         private agentContainers: Map<
           string,
@@ -91,6 +96,11 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             lastRow: number;
             lastCol: number;
             lastState: AgentState;
+            /** True while a step-by-step walk tween chain is running. */
+            walking: boolean;
+            /** The final destination (row,col) the agent is heading to. */
+            goalRow: number;
+            goalCol: number;
           }
         > = new Map();
 
@@ -137,6 +147,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
 
           this.drawOffice();
           this.createAnimations();
+          this.collisionBlocked = buildCollisionMap(this.officeConfig);
           this.syncAgents();
           this.fitCamera();
 
@@ -469,6 +480,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               newCfg.rows !== this.officeConfig.rows
             ) {
               this.officeConfig = newCfg;
+              this.collisionBlocked = buildCollisionMap(newCfg);
             }
           }
 
@@ -545,6 +557,9 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
                 lastRow: pos.row,
                 lastCol: pos.col,
                 lastState: agent.state,
+                walking: false,
+                goalRow: pos.row,
+                goalCol: pos.col,
               });
             } else {
               // Update existing agent
@@ -588,44 +603,38 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
                 existing.lastState = agent.state;
               }
 
-              // Move if position changed
-              if (existing.lastRow !== pos.row || existing.lastCol !== pos.col) {
-                const dx = targetX - container.x;
-                const dy = targetY - container.y;
+              // Move if destination changed
+              if (existing.goalRow !== pos.row || existing.goalCol !== pos.col) {
+                existing.goalRow = pos.row;
+                existing.goalCol = pos.col;
 
-                // Determine walk direction
-                let walkDir: "down" | "up" | "right" = "down";
-                let isLeft = false;
-                if (Math.abs(dy) > Math.abs(dx)) {
-                  walkDir = dy > 0 ? "down" : "up";
-                } else {
-                  walkDir = "right";
-                  isLeft = dx < 0;
+                // If already walking, interrupt — we'll start a new path
+                // from the agent's current grid cell
+                if (existing.walking) {
+                  this.tweens.killTweensOf(container);
+                  existing.walking = false;
                 }
 
-                // Flip sprite for left movement
-                sprite.setFlipX(isLeft);
+                // Compute A* path from current cell to target cell
+                const path = findPath(
+                  this.officeConfig.rows,
+                  this.officeConfig.cols,
+                  this.collisionBlocked,
+                  { row: existing.lastRow, col: existing.lastCol },
+                  { row: pos.row, col: pos.col },
+                );
 
-                sprite.play(`${charKey}_walk_${walkDir}`);
-
-                this.tweens.add({
-                  targets: container,
-                  x: targetX,
-                  y: targetY,
-                  duration: 600,
-                  ease: "Sine.easeInOut",
-                  onComplete: () => {
-                    // Stop walk and show idle frame facing arrival direction
-                    sprite.play(`${charKey}_idle_${walkDir}`);
-                    if (walkDir !== "right") {
-                      sprite.setFlipX(false);
-                    }
-                  },
-                });
-
-                container.setDepth(pos.row);
-                existing.lastRow = pos.row;
-                existing.lastCol = pos.col;
+                if (path.length > 1) {
+                  this.walkAlongPath(agent.agentId, charKey, path);
+                } else if (path.length === 0) {
+                  // No valid path — teleport as fallback so agent isn't stuck
+                  container.x = targetX;
+                  container.y = targetY;
+                  container.setDepth(pos.row);
+                  existing.lastRow = pos.row;
+                  existing.lastCol = pos.col;
+                }
+                // path.length === 1 means already at destination — nothing to do
               }
             }
           }
@@ -638,6 +647,82 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               this.agentContainers.delete(id);
             }
           }
+        }
+
+        /* ---------------------------------------------------------- */
+        /*  Step-by-step walk along an A* path                         */
+        /* ---------------------------------------------------------- */
+
+        private walkAlongPath(
+          agentId: string,
+          charKey: string,
+          path: Array<{ row: number; col: number }>,
+        ) {
+          const entry = this.agentContainers.get(agentId);
+          if (!entry) return;
+
+          entry.walking = true;
+          let stepIndex = 1; // path[0] is the current cell
+
+          const stepNext = () => {
+            const freshEntry = this.agentContainers.get(agentId);
+            if (!freshEntry || !freshEntry.walking) return;
+            if (stepIndex >= path.length) {
+              // Arrived at destination
+              freshEntry.walking = false;
+              // Idle in last direction
+              const prev = path[stepIndex - 2] ?? path[stepIndex - 1];
+              const last = path[stepIndex - 1];
+              const dir = this.walkDirection(prev, last);
+              freshEntry.sprite.play(`${charKey}_idle_${dir.anim}`);
+              if (dir.anim !== "right") freshEntry.sprite.setFlipX(false);
+              return;
+            }
+
+            const from = path[stepIndex - 1];
+            const to = path[stepIndex];
+            const dir = this.walkDirection(from, to);
+
+            freshEntry.sprite.setFlipX(dir.flipX);
+            freshEntry.sprite.play(`${charKey}_walk_${dir.anim}`);
+
+            const tx = to.col * TILE + TILE * 0.5;
+            const ty = to.row * TILE;
+
+            this.tweens.add({
+              targets: freshEntry.container,
+              x: tx,
+              y: ty,
+              duration: 180,
+              ease: "Linear",
+              onComplete: () => {
+                const e = this.agentContainers.get(agentId);
+                if (!e) return;
+                e.lastRow = to.row;
+                e.lastCol = to.col;
+                e.container.setDepth(to.row);
+                stepIndex++;
+                // Small pause between steps for natural look
+                this.time.delayedCall(20, stepNext);
+              },
+            });
+          };
+
+          stepNext();
+        }
+
+        /** Determine animation direction for a single grid step. */
+        private walkDirection(
+          from: { row: number; col: number },
+          to: { row: number; col: number },
+        ): { anim: "down" | "up" | "right"; flipX: boolean } {
+          const dr = to.row - from.row;
+          const dc = to.col - from.col;
+          if (dr > 0) return { anim: "down", flipX: false };
+          if (dr < 0) return { anim: "up", flipX: false };
+          if (dc > 0) return { anim: "right", flipX: false };
+          // dc < 0: moving left → use right animation flipped
+          return { anim: "right", flipX: true };
         }
 
         /* ---------------------------------------------------------- */
