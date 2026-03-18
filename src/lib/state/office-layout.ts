@@ -6,33 +6,113 @@ export interface GridPosition {
   zone: "desk" | "meeting";
 }
 
-// Desk positions in the office grid (row, col).
-// 5 desks arranged in 2 rows of the workspace zone.
-export const DESK_SLOTS: GridPosition[] = [
-  { row: 4, col: 3, zone: "desk" },   // Desk 1: top-left
-  { row: 4, col: 8, zone: "desk" },   // Desk 2: top-center
-  { row: 4, col: 13, zone: "desk" },  // Desk 3: top-right
-  { row: 7, col: 3, zone: "desk" },   // Desk 4: bottom-left
-  { row: 7, col: 8, zone: "desk" },   // Desk 5: bottom-center
-];
+export interface OfficeConfig {
+  cols: number;
+  rows: number;
+  desks: GridPosition[];
+  meetingSeats: GridPosition[];
+  meetingRooms: Array<{ row: number; col: number; w: number; h: number }>;
+  breakRoom: { row: number; col: number; w: number; h: number } | null;
+}
 
-// Meeting room seats around the conference table.
-export const MEETING_SEATS: GridPosition[] = [
-  { row: 10, col: 7, zone: "meeting" },
-  { row: 10, col: 11, zone: "meeting" },
-  { row: 12, col: 7, zone: "meeting" },
-  { row: 12, col: 11, zone: "meeting" },
-];
+// Desk layout: 3 columns of desks, as many rows as needed
+function generateDesks(count: number): GridPosition[] {
+  const desks: GridPosition[] = [];
+  const DESK_COLS = [3, 8, 13];
+  const FIRST_DESK_ROW = 4;
+  const ROW_SPACING = 3;
 
+  for (let i = 0; i < count; i++) {
+    const colIndex = i % DESK_COLS.length;
+    const rowIndex = Math.floor(i / DESK_COLS.length);
+    desks.push({
+      row: FIRST_DESK_ROW + rowIndex * ROW_SPACING,
+      col: DESK_COLS[colIndex],
+      zone: "desk",
+    });
+  }
+  return desks;
+}
+
+// Meeting seats arranged around tables
+function generateMeetingSeats(count: number, meetingRow: number): GridPosition[] {
+  const seats: GridPosition[] = [];
+  const room1Seats = [
+    { row: meetingRow, col: 7, zone: "meeting" as const },
+    { row: meetingRow, col: 11, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 7, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 11, zone: "meeting" as const },
+  ];
+  const room2Seats = [
+    { row: meetingRow, col: 16, zone: "meeting" as const },
+    { row: meetingRow, col: 19, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 16, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 19, zone: "meeting" as const },
+  ];
+
+  for (let i = 0; i < count; i++) {
+    if (i < room1Seats.length) {
+      seats.push(room1Seats[i]);
+    } else if (i < room1Seats.length + room2Seats.length) {
+      seats.push(room2Seats[i - room1Seats.length]);
+    } else {
+      seats.push(room1Seats[i % room1Seats.length]);
+    }
+  }
+  return seats;
+}
+
+/**
+ * Generate an office that scales with team size.
+ * 2-5: compact. 6-10: standard with break room. 11+: big open space, 2 meeting rooms.
+ */
+export function generateOfficeConfig(teamSize: number): OfficeConfig {
+  const deskRows = Math.ceil(teamSize / 3);
+  const deskZoneEnd = 4 + deskRows * 3;
+  const meetingStartRow = deskZoneEnd + 1;
+
+  const needsSecondMeeting = teamSize > 8;
+  const meetingZoneHeight = 5;
+  const hasBreakRoom = teamSize > 5;
+  const totalRows = Math.max(14, meetingStartRow + meetingZoneHeight + (hasBreakRoom ? 4 : 1));
+  const totalCols = 22;
+
+  const desks = generateDesks(teamSize);
+  const meetingSeats = generateMeetingSeats(teamSize, meetingStartRow + 1);
+
+  const meetingRooms = [
+    { row: meetingStartRow, col: 5, w: 8, h: 4.5 },
+  ];
+  if (needsSecondMeeting) {
+    meetingRooms.push({ row: meetingStartRow, col: 14, w: 7, h: 4.5 });
+  }
+
+  const breakRoom = hasBreakRoom
+    ? { row: meetingStartRow + meetingZoneHeight, col: 2, w: 6, h: 3 }
+    : null;
+
+  return { cols: totalCols, rows: totalRows, desks, meetingSeats, meetingRooms, breakRoom };
+}
+
+// Backwards-compatible fixed configs for tests
+export const DESK_SLOTS = generateDesks(5);
+export const MEETING_SEATS = generateMeetingSeats(4, 11);
+
+/**
+ * Get grid position for an agent. Works with any team size.
+ */
 export function agentGridPosition(
   agentIndex: number,
   agentState: AgentState,
+  officeConfig?: OfficeConfig,
 ): GridPosition {
+  const desks = officeConfig?.desks ?? DESK_SLOTS;
+  const seats = officeConfig?.meetingSeats ?? MEETING_SEATS;
+
   if (agentState === "meeting") {
-    return MEETING_SEATS[agentIndex % MEETING_SEATS.length];
+    return seats[agentIndex % seats.length];
   }
-  // All other states: agent stays at their assigned desk.
-  return DESK_SLOTS[agentIndex % DESK_SLOTS.length];
+  return desks[agentIndex % desks.length];
 }
 
 // State → bubble icon mapping for the UI layer.

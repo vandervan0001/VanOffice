@@ -54,21 +54,58 @@ function buildAssumptions(input: CreateWorkspaceInput, fileContents: string[]) {
   return assumptions;
 }
 
-function deriveRoleIds(brief: string) {
-  const roleIds = new Set<string>([
-    "mission-planner",
-    "research-lead",
-    "strategy-lead",
-    "editor-reviewer",
-  ]);
-  const lower = brief.toLowerCase();
+// Keyword → role mapping. Each entry adds a role when any keyword matches.
+const ROLE_TRIGGERS: Array<{ keywords: string[]; roleId: string }> = [
+  // Research & analysis
+  { keywords: ["research", "veille", "investigate", "study", "data", "evidence", "benchmark"], roleId: "research-lead" },
+  { keywords: ["data", "metrics", "kpi", "analytics", "numbers", "dashboard", "benchmark"], roleId: "data-analyst" },
+  { keywords: ["competitor", "competitive", "landscape", "positioning", "market map"], roleId: "competitive-analyst" },
 
-  if (lower.includes("design") || lower.includes("brand")) {
-    roleIds.add("strategy-lead");
+  // Strategy & planning
+  { keywords: ["strategy", "plan", "action", "roadmap", "priorities", "direction"], roleId: "strategy-lead" },
+  { keywords: ["project", "timeline", "milestone", "schedule", "coordination", "dependencies"], roleId: "project-manager" },
+
+  // Content & communication
+  { keywords: ["content", "blog", "editorial", "article", "seo", "writing", "copy"], roleId: "content-writer" },
+  { keywords: ["communication", "press", "pr", "messaging", "narrative", "investor", "stakeholder", "memo", "update"], roleId: "communications-lead" },
+
+  // Design & brand
+  { keywords: ["brand", "identity", "visual", "logo", "style guide", "tone"], roleId: "brand-strategist" },
+  { keywords: ["ux", "user research", "persona", "journey", "user experience", "interview"], roleId: "ux-researcher" },
+
+  // Marketing
+  { keywords: ["marketing", "campaign", "promotion", "go-to-market", "gtm", "channel", "launch"], roleId: "marketing-lead" },
+
+  // Operations & HR
+  { keywords: ["onboarding", "culture", "handbook", "policy", "hire", "employee", "team building"], roleId: "hr-specialist" },
+  { keywords: ["process", "operations", "workflow", "sop", "documentation", "procedure"], roleId: "operations-lead" },
+
+  // Finance
+  { keywords: ["budget", "financial", "forecast", "revenue", "cost", "pricing", "investment", "investor"], roleId: "financial-analyst" },
+
+  // Events
+  { keywords: ["event", "conference", "meetup", "launch event", "webinar", "workshop"], roleId: "event-planner" },
+];
+
+function deriveRoleIds(brief: string, outputExpectations: string): string[] {
+  const lower = `${brief} ${outputExpectations}`.toLowerCase();
+  const roleIds = new Set<string>();
+
+  // Always include planner and reviewer
+  roleIds.add("mission-planner");
+  roleIds.add("editor-reviewer");
+
+  // Match roles based on keywords in the brief
+  for (const trigger of ROLE_TRIGGERS) {
+    if (trigger.keywords.some((kw) => lower.includes(kw))) {
+      roleIds.add(trigger.roleId);
+    }
   }
 
-  if (lower.includes("research") || lower.includes("veille")) {
+  // If we only have planner + reviewer, add research + strategy as sensible defaults
+  if (roleIds.size <= 2) {
     roleIds.add("research-lead");
+    roleIds.add("strategy-lead");
   }
 
   return Array.from(roleIds);
@@ -82,14 +119,22 @@ function buildSystemPrompt(member: TeamMember) {
   ].join("\n\n");
 }
 
+// Diverse agent names for larger teams
+const AGENT_NAMES = [
+  "Avery", "Morgan", "Taylor", "Jordan", "Riley",
+  "Casey", "Quinn", "Alex", "Sam", "Jamie",
+  "Parker", "Reese", "Skyler", "Drew", "Robin",
+  "Charlie", "Dakota", "Emery", "Finley", "Harper",
+];
+
 function buildTeamProposal(input: CreateWorkspaceInput, assumptions: string[]): TeamProposal {
-  const roleIds = deriveRoleIds(input.rawBrief);
+  const roleIds = deriveRoleIds(input.rawBrief, input.outputExpectations);
 
   const roles = roleIds
     .map((roleId) => getRoleTemplate(roleId))
     .filter((template): template is NonNullable<typeof template> => Boolean(template))
     .map((template, index) => {
-      const displayName = ["Avery", "Morgan", "Taylor", "Jordan", "Riley"][index] ?? `Agent ${index + 1}`;
+      const displayName = AGENT_NAMES[index % AGENT_NAMES.length];
       const member: TeamMember = {
         agentId: nanoid(),
         roleId: template.roleId,
@@ -108,93 +153,96 @@ function buildTeamProposal(input: CreateWorkspaceInput, assumptions: string[]): 
       return member;
     });
 
+  const teamSize = roles.length;
+  const rationale = teamSize <= 4
+    ? `A lean ${teamSize}-person squad for a focused mission.`
+    : teamSize <= 8
+      ? `A ${teamSize}-person cross-functional team to cover the mission's breadth.`
+      : `A ${teamSize}-person task force — the mission scope requires broad coverage.`;
+
+  // Derive expected outputs from the roles' deliverable types
+  const estimatedOutputs = Array.from(
+    new Set(roles.flatMap((r) => {
+      const tmpl = getRoleTemplate(r.roleId);
+      return tmpl ? [tmpl.deliverableTypes[0]] : [];
+    }).filter(Boolean)),
+  ).map((type) => type.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
+
   return {
     name: `${slugFromTitle(input.missionGoal || "Mission")} Crew`,
-    rationale:
-      "A lean cross-functional squad is enough for the first pass: one planner, one researcher, one strategist, one reviewer.",
-    estimatedOutputs: [
-      "Mission summary",
-      "Research brief",
-      "Action plan",
-      "Final team packet",
-    ],
+    rationale,
+    estimatedOutputs,
     roles,
   };
 }
 
-function buildTaskBoard(teamProposal: TeamProposal): TaskCard[] {
-  const planner = teamProposal.roles.find((role) => role.roleId === "mission-planner");
-  const researcher = teamProposal.roles.find((role) => role.roleId === "research-lead");
-  const strategist = teamProposal.roles.find((role) => role.roleId === "strategy-lead");
-  const reviewer = teamProposal.roles.find((role) => role.roleId === "editor-reviewer");
+// Maps role type to a work phase. Used for task generation and ordering.
+const ROLE_WORK_PHASES: Record<string, { phase: number; workType: TaskCard["workType"]; taskTitle: string; taskDesc: string }> = {
+  "mission-planner": { phase: 0, workType: "planning", taskTitle: "Frame the mission and sharpen the operating assumptions", taskDesc: "Produce a concise mission framing note before the team branches out." },
+  "research-lead": { phase: 1, workType: "researching", taskTitle: "Compile market and evidence signals", taskDesc: "Gather citable signals from the brief and light web research." },
+  "data-analyst": { phase: 1, workType: "researching", taskTitle: "Analyze quantitative data and metrics", taskDesc: "Extract insights from available data, benchmarks, and quantitative evidence." },
+  "competitive-analyst": { phase: 1, workType: "researching", taskTitle: "Map the competitive landscape", taskDesc: "Identify competitors, positioning gaps, and differentiation opportunities." },
+  "ux-researcher": { phase: 1, workType: "researching", taskTitle: "Synthesize user needs and pain points", taskDesc: "Build personas and journey maps from available user context." },
+  "strategy-lead": { phase: 2, workType: "writing", taskTitle: "Turn findings into an action plan", taskDesc: "Synthesize the evidence into concrete next steps and recommendations." },
+  "content-writer": { phase: 2, workType: "writing", taskTitle: "Draft content deliverables", taskDesc: "Write the content pieces specified in the brief." },
+  "communications-lead": { phase: 2, workType: "writing", taskTitle: "Craft messaging and communications", taskDesc: "Develop key messages, narratives, and communication materials." },
+  "brand-strategist": { phase: 2, workType: "writing", taskTitle: "Define brand positioning and guidelines", taskDesc: "Establish brand identity, voice, and positioning strategy." },
+  "marketing-lead": { phase: 2, workType: "writing", taskTitle: "Design the marketing strategy", taskDesc: "Build the go-to-market plan with channels, timing, and messaging." },
+  "project-manager": { phase: 2, workType: "planning", taskTitle: "Build the project timeline and milestones", taskDesc: "Organize work into phases with clear owners and deadlines." },
+  "operations-lead": { phase: 2, workType: "writing", taskTitle: "Design operational processes", taskDesc: "Document workflows, procedures, and operational structures." },
+  "hr-specialist": { phase: 2, workType: "writing", taskTitle: "Build people-related deliverables", taskDesc: "Create onboarding, culture, or policy documents." },
+  "financial-analyst": { phase: 2, workType: "writing", taskTitle: "Prepare financial analysis", taskDesc: "Analyze budgets, forecasts, and financial metrics." },
+  "event-planner": { phase: 2, workType: "planning", taskTitle: "Plan event logistics and run-of-show", taskDesc: "Organize venue, timeline, promotion, and logistics." },
+  "editor-reviewer": { phase: 3, workType: "writing", taskTitle: "Review the packet and prepare final deliverables", taskDesc: "Edit the artifacts into a clean final packet with explicit review notes." },
+};
 
+function buildTaskBoard(teamProposal: TeamProposal): TaskCard[] {
   const tasks: TaskCard[] = [];
 
-  if (planner) {
-    tasks.push({
-      id: nanoid(),
-      title: "Frame the mission and sharpen the operating assumptions",
-      ownerAgentId: planner.agentId,
-      status: "todo",
-      description: "Produce a concise mission framing note before the team branches out.",
-      workType: "planning",
-      acceptanceCriteria: [
-        "The mission summary is explicit.",
-        "Top assumptions are visible to the full team.",
-      ],
-      dependencies: [],
-      linkedArtifactIds: ["mission-summary"],
-    });
-  }
+  // Sort roles by work phase
+  const sortedRoles = [...teamProposal.roles].sort((a, b) => {
+    const phaseA = ROLE_WORK_PHASES[a.roleId]?.phase ?? 2;
+    const phaseB = ROLE_WORK_PHASES[b.roleId]?.phase ?? 2;
+    return phaseA - phaseB;
+  });
 
-  if (researcher) {
-    tasks.push({
-      id: nanoid(),
-      title: "Compile market and evidence signals",
-      ownerAgentId: researcher.agentId,
-      status: "todo",
-      description: "Gather citable signals from the brief and light web research.",
-      workType: "researching",
-      acceptanceCriteria: [
-        "Key facts or external references are summarized.",
-        "Confidence gaps are noted.",
-      ],
-      dependencies: tasks[0] ? [tasks[0].id] : [],
-      linkedArtifactIds: ["research-brief"],
-    });
-  }
+  for (const role of sortedRoles) {
+    const config = ROLE_WORK_PHASES[role.roleId];
+    if (!config) continue;
 
-  if (strategist) {
-    tasks.push({
-      id: nanoid(),
-      title: "Turn findings into an action plan",
-      ownerAgentId: strategist.agentId,
-      status: "todo",
-      description: "Synthesize the evidence into concrete next steps and recommendations.",
-      workType: "writing",
-      acceptanceCriteria: [
-        "Recommendations are ordered by impact.",
-        "Every recommendation has a rationale.",
-      ],
-      dependencies: tasks.filter((task) => task.workType === "researching").map((task) => task.id),
-      linkedArtifactIds: ["action-plan"],
-    });
-  }
+    const artifactId = role.roleId === "editor-reviewer"
+      ? "final-deliverable"
+      : role.roleId === "mission-planner"
+        ? "mission-summary"
+        : `${role.roleId}-output`;
 
-  if (reviewer) {
+    // Dependencies: phase N depends on all phase N-1 tasks
+    const deps = tasks
+      .filter((t) => {
+        const tRole = sortedRoles.find((r) => r.agentId === t.ownerAgentId);
+        const tPhase = tRole ? (ROLE_WORK_PHASES[tRole.roleId]?.phase ?? 2) : 0;
+        return tPhase === config.phase - 1;
+      })
+      .map((t) => t.id);
+
+    // Editor depends on ALL previous tasks
+    const finalDeps = role.roleId === "editor-reviewer"
+      ? tasks.map((t) => t.id)
+      : deps;
+
     tasks.push({
       id: nanoid(),
-      title: "Review the packet and prepare final deliverables",
-      ownerAgentId: reviewer.agentId,
+      title: config.taskTitle,
+      ownerAgentId: role.agentId,
       status: "todo",
-      description: "Edit the artifacts into a clean final packet with explicit review notes.",
-      workType: "writing",
+      description: config.taskDesc,
+      workType: config.workType,
       acceptanceCriteria: [
-        "Artifacts are coherent and versioned.",
-        "Final packet is ready for approval.",
+        `Deliverable is complete and ready for review.`,
+        `Sources and assumptions are documented.`,
       ],
-      dependencies: tasks.map((task) => task.id),
-      linkedArtifactIds: ["final-deliverable"],
+      dependencies: finalDeps,
+      linkedArtifactIds: [artifactId],
     });
   }
 
@@ -316,18 +364,14 @@ export async function approveGate(
 
     for (const task of tasks) {
       if (task.linkedArtifactIds.length > 0) {
+        const artifactId = task.linkedArtifactIds[0];
+        // Derive a readable title from the artifact ID
+        const artifactTitle = artifactId
+          .replace(/-output$/, "")
+          .replace(/-/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
         await appendEvent(workspaceId, "artifact.updated", {
-          artifact: firstArtifact(
-            task.linkedArtifactIds[0] === "mission-summary"
-              ? "Mission Summary"
-              : task.linkedArtifactIds[0] === "research-brief"
-                ? "Research Brief"
-                : task.linkedArtifactIds[0] === "action-plan"
-                  ? "Action Plan"
-                  : "Final Team Packet",
-            task.linkedArtifactIds[0],
-            task.id,
-          ),
+          artifact: firstArtifact(artifactTitle, artifactId, task.id),
         });
       }
     }
