@@ -3,44 +3,89 @@ import { getWorkspaceSnapshot } from "@/lib/runtime/engine";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ workspaceId: string }> },
 ) {
   const { workspaceId } = await context.params;
   let closed = false;
+  let snapshotInterval: ReturnType<typeof setInterval> | null = null;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  const encoder = new TextEncoder();
+
+  const stop = () => {
+    if (closed) {
+      return;
+    }
+
+    closed = true;
+    if (snapshotInterval) {
+      clearInterval(snapshotInterval);
+      snapshotInterval = null;
+    }
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+  };
 
   const stream = new ReadableStream({
     start(controller) {
-      const encoder = new TextEncoder();
-
-      const pushSnapshot = async () => {
-        const snapshot = await getWorkspaceSnapshot(workspaceId);
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(snapshot)}\n\n`),
-        );
-      };
-
-      void pushSnapshot();
-
-      const interval = setInterval(() => {
+      const safeEnqueue = (payload: string) => {
         if (closed) {
           return;
         }
 
+        try {
+          controller.enqueue(encoder.encode(payload));
+        } catch {
+          stop();
+        }
+      };
+
+      const pushSnapshot = async () => {
+        if (closed) {
+          return;
+        }
+
+        try {
+          const snapshot = await getWorkspaceSnapshot(workspaceId);
+          safeEnqueue(`data: ${JSON.stringify(snapshot)}\n\n`);
+        } catch (cause) {
+          const message =
+            cause instanceof Error
+              ? cause.message
+              : "Failed to load workspace snapshot";
+          safeEnqueue(`event: error\ndata: ${JSON.stringify({ message })}\n\n`);
+          stop();
+          try {
+            controller.close();
+          } catch {
+            // Stream already closed by client disconnect.
+          }
+        }
+      };
+
+      void pushSnapshot();
+
+      snapshotInterval = setInterval(() => {
         void pushSnapshot();
       }, 1000);
 
-      const heartbeat = setInterval(() => {
-        controller.enqueue(encoder.encode(": heartbeat\n\n"));
+      heartbeatInterval = setInterval(() => {
+        safeEnqueue(": heartbeat\n\n");
       }, 15000);
 
-      return () => {
-        clearInterval(interval);
-        clearInterval(heartbeat);
-      };
+      request.signal.addEventListener("abort", () => {
+        stop();
+        try {
+          controller.close();
+        } catch {
+          // Stream already closed by runtime.
+        }
+      });
     },
     cancel() {
-      closed = true;
+      stop();
     },
   });
 

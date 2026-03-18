@@ -4,6 +4,14 @@ Team Foundry is a local-first web app to create an AI team from a mission brief,
 
 This repository is intentionally public-ready: reproducible setup, clear requirements, explicit runtime behavior, and a clean git hygiene baseline.
 
+## Project status
+
+This is currently an experimental project and it is intentionally 100% vibe-coded at MVP stage.
+
+- It is usable for demos and rapid iteration.
+- It is not yet production hardened.
+- APIs, schemas, and runtime internals may change quickly between versions.
+
 ## Core capabilities (v1)
 
 - Mission flow: `brief -> parsed understanding -> team proposal -> approval -> execution -> final approval`
@@ -130,6 +138,41 @@ To reset local state:
 ```bash
 rm -rf .data
 ```
+
+## Roadmap and scaling plan
+
+### Current stage (MVP / experimental)
+
+- Single local workspace flow
+- Event-sourced run timeline
+- Basic adapter abstraction for providers and tools
+- Approval-gated execution loop
+
+### v1 stable (post-MVP hardening)
+
+- Contract freeze for core domain types (`MissionBrief`, `TeamProposal`, `TaskCard`, `Artifact`, `RunEvent`)
+- DB migrations and forward/backward compatibility policy
+- Retry policy and better error semantics for provider/tool adapters
+- SSE resilience (reconnect strategy, heartbeat handling, dead-connection cleanup)
+- Deterministic regression test pack for replay, approvals, and artifact provenance
+- Contributor docs (`CONTRIBUTING.md`, architecture decisions, adapter authoring guide)
+
+### v2 (scale architecture)
+
+- Multi-workspace concurrency in one runtime
+- Optional split between API process and worker process
+- Queue-backed execution mode (Redis/NATS) to decouple orchestration from UI
+- Pluggable storage strategy (SQLite local, Postgres server mode)
+- Provider budget controls (rate limit, token quotas, per-workspace guardrails)
+- Observability baseline (structured logs, tracing, run-level metrics)
+
+### v3+ (platform direction)
+
+- Multi-user collaboration and workspace permissions
+- Template marketplace for teams and missions
+- Optional plugin runtime for custom tools
+- Horizontal worker scaling for long-running missions
+- Managed cloud deployment profile while preserving local-first mode
 
 ## Git hygiene (important)
 
