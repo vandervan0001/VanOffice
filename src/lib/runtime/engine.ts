@@ -15,6 +15,8 @@ import { SHARED_OPERATING_MANUAL, getRoleTemplate, ROLE_TEMPLATES } from "@/lib/
 import { localToolAdapter } from "@/lib/runtime/adapters/tools";
 import { projectWorkspaceState } from "@/lib/runtime/projector";
 import { clearWorkspaceSchedule, scheduleWorkspaceExecution } from "@/lib/runtime/scheduler";
+import { isPaperclipAvailable } from "@/lib/runtime/adapters/paperclip";
+import { executePaperclipWorkspace, clearPaperclipSchedule } from "@/lib/runtime/paperclip-executor";
 import type {
   ApprovalGateType,
   ArtifactRecord,
@@ -649,9 +651,14 @@ export async function approveGate(
     await setWorkspaceStatus(workspaceId, "awaiting_plan_approval");
   } else if (gateType === "execution_plan") {
     await setWorkspaceStatus(workspaceId, "running");
-    await scheduleWorkspaceExecution(workspaceId);
+    if (await isPaperclipAvailable()) {
+      await executePaperclipWorkspace(workspaceId);
+    } else {
+      await scheduleWorkspaceExecution(workspaceId);
+    }
   } else if (gateType === "final_deliverables") {
     clearWorkspaceSchedule(workspaceId);
+    clearPaperclipSchedule(workspaceId);
     await appendEvent(workspaceId, "run.completed", {
       outcome: "Deliverables approved by the user.",
     });

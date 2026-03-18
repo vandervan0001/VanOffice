@@ -28,7 +28,9 @@
     "pretest:watch": "npm run clean:metadata",
     "test:watch": "node ./node_modules/vitest/vitest.mjs",
     "clean:metadata": "find . -path './node_modules' -prune -o -name '._*' -delete",
-    "clean:next": "rm -rf .next"
+    "clean:next": "rm -rf .next",
+    "paperclip": "npx paperclipai onboard --yes",
+    "dev:paperclip": "PAPERCLIP_URL=http://localhost:3100 node ./node_modules/next/dist/bin/next dev --webpack"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
