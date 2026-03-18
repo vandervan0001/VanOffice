@@ -41,17 +41,25 @@ interface WorkspaceShellProps {
 
 async function fetchSnapshot(workspaceId: string): Promise<WorkspaceSnapshot> {
   const res = await fetch(`/api/workspaces/${workspaceId}`);
-  if (!res.ok) throw new Error("Unable to load workspace");
-  return res.json() as Promise<WorkspaceSnapshot>;
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? "Unable to load workspace");
+  }
+  const data = await res.json() as WorkspaceSnapshot;
+  // Guard against malformed responses missing the nested workspace object
+  if (!data?.workspace?.id) {
+    throw new Error("Invalid workspace data received");
+  }
+  return data;
 }
 
 function deriveSuggestions(snapshot: WorkspaceSnapshot | null): string[] {
-  if (!snapshot) return [];
+  if (!snapshot?.workspace) return [];
   const status = snapshot.workspace.status;
 
   if (status === "awaiting_team_approval" || status === "awaiting_plan_approval") {
     const base = ["Start execution", "Adjust team composition", "Add constraints"];
-    if (snapshot.expectedOutputs.length > 0) {
+    if (snapshot.expectedOutputs?.length > 0) {
       const outputSuggestions = snapshot.expectedOutputs.slice(0, 2).map(
         (output) => `Draft ${output.toLowerCase()}`
       );
@@ -125,7 +133,14 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     if (!workspaceId) return;
     const es = new EventSource(`/api/workspaces/${workspaceId}/stream`);
     es.onmessage = (event) => {
-      setWorkspace(JSON.parse(event.data) as WorkspaceSnapshot);
+      try {
+        const data = JSON.parse(event.data) as WorkspaceSnapshot;
+        if (data?.workspace?.id) {
+          setWorkspace(data);
+        }
+      } catch {
+        // Ignore malformed SSE messages
+      }
     };
     es.onerror = () => es.close();
     return () => es.close();
