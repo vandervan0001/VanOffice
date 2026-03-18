@@ -6,6 +6,7 @@ import { OfficeView } from "@/components/office/office-view";
 import { MissionComposer } from "@/components/composer/mission-composer";
 import { ApprovalSidebar } from "@/components/sidebar/approval-sidebar";
 import { ArtifactPanel } from "@/components/outputs/artifact-panel";
+import { CommandInput } from "@/components/sidebar/command-input";
 import type { ProviderAdapter, WorkspaceSnapshot } from "@/lib/types";
 
 interface WorkspaceShellProps {
@@ -25,7 +26,6 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
 
   const workspaceId = workspace?.workspace.id;
 
-  // Load workspace from URL param on mount
   useEffect(() => {
     const id = new URL(window.location.href).searchParams.get("workspace");
     if (!id) return;
@@ -34,7 +34,6 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
       .catch((e) => setError(e instanceof Error ? e.message : "Load failed"));
   }, []);
 
-  // SSE live updates
   useEffect(() => {
     if (!workspaceId) return;
     const es = new EventSource(`/api/workspaces/${workspaceId}/stream`);
@@ -96,48 +95,46 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     );
   }
 
-  // Active workspace: full-screen layout — office left 70%, sidebar right 30%
+  // Active workspace: 50/50 layout with margins
+  // Left = office (top) + deliverables (bottom)
+  // Right = validations card + chatbox card (separate)
   return (
-    <main className="h-screen overflow-hidden bg-[var(--background)]">
-      <div
-        className="workspace-grid grid h-full"
-        style={{
-          gridTemplateColumns: "1fr 320px",
-          gridTemplateRows: "1fr auto",
-        }}
-      >
-        {/* Left: Pixel Office — fills available height, no scroll */}
-        <section
-          className="overflow-hidden"
-          style={{ gridColumn: "1", gridRow: "1" }}
-        >
-          <OfficeView snapshot={workspace} />
-        </section>
+    <main className="h-screen bg-[var(--background)] p-4">
+      <div className="mx-auto flex h-full max-w-[1600px] gap-4">
+        {/* LEFT COLUMN: office + deliverables */}
+        <div className="flex flex-1 flex-col gap-4">
+          {/* Office */}
+          <div className="flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[#e8d8c0]">
+            <OfficeView snapshot={workspace} />
+          </div>
 
-        {/* Right sidebar — same height as office, scrolls internally */}
-        <div
-          className="overflow-y-auto border-l border-[var(--border)]"
-          style={{ gridColumn: "2", gridRow: "1 / -1" }}
-        >
-          <ApprovalSidebar
-            snapshot={workspace}
-            busyGate={busyGate}
-            onApprove={approve}
-          />
+          {/* Deliverables */}
+          <div className="shrink-0">
+            <ArtifactPanel artifacts={workspace.artifacts} />
+          </div>
         </div>
 
-        {/* Bottom-left: Artifacts */}
-        <div
-          className="border-t border-[var(--border)]"
-          style={{ gridColumn: "1", gridRow: "2" }}
-        >
-          <ArtifactPanel artifacts={workspace.artifacts} />
+        {/* RIGHT COLUMN: validations card + chatbox card */}
+        <div className="flex w-[400px] shrink-0 flex-col gap-4">
+          {/* Validations card — scrollable */}
+          <div className="flex-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <ApprovalSidebar
+              snapshot={workspace}
+              busyGate={busyGate}
+              onApprove={approve}
+            />
+          </div>
+
+          {/* Chatbox card — separate */}
+          <div className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+            <CommandInput />
+          </div>
         </div>
       </div>
 
       {error && (
-        <div className="mx-auto max-w-[1200px] px-4">
-          <p className="mt-4 rounded-xl bg-[var(--attention-bg)] p-3 text-sm text-[var(--attention)]">
+        <div className="fixed bottom-4 left-4 right-4">
+          <p className="mx-auto max-w-lg rounded-xl bg-[var(--attention-bg)] p-3 text-center text-sm text-[var(--attention)]">
             {error}
           </p>
         </div>

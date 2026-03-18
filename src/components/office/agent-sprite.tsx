@@ -303,7 +303,7 @@ export function AgentSprite({
         top,
         left,
         width: CELL_SIZE * 2,
-        transition: "top 0.8s ease-in-out, left 0.8s ease-in-out",
+        transition: "left 0.5s ease-in-out, top 0.5s ease-in-out 0.5s",
         animationDelay: `${entryDelay}ms`,
         zIndex: row, // agents lower on screen render in front
       }}

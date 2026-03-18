@@ -101,42 +101,36 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
         }}
       />
 
-      {/* Wall furniture — windows, clock, poster, big monitor */}
-      <Furniture type="window" row={0.5} col={2} />
-      <Furniture type="window" row={0.5} col={6} />
-      <Furniture type="window" row={0.5} col={11} />
-      <Furniture type="clock" row={0.5} col={16} />
-      <Furniture type="poster" row={0.5} col={18} />
+      {/* Wall furniture — on the back wall only (row 0-2), no overlap risk */}
+      <Furniture type="window" row={0.5} col={1} />
+      <Furniture type="window" row={0.5} col={5} />
+      <Furniture type="window" row={0.5} col={9} />
+      <Furniture type="clock" row={0.5} col={13} />
+      <Furniture type="poster" row={0.5} col={15} />
+      <Furniture type="monitor-big" row={-0.5} col={17} />
 
-      {/* Large dashboard monitor on wall */}
-      <Furniture type="monitor-big" row={0} col={config.cols - 6} />
-
-      {/* Bookshelves along the left side wall */}
-      <Furniture type="bookshelf" row={3} col={0} />
-      {teamSize > 4 && <Furniture type="bookshelf" row={6} col={0} />}
-
-      {/* Filing cabinets near wall */}
-      <Furniture type="filing-cabinet" row={3} col={config.cols - 2} />
-      <Furniture type="filing-cabinet" row={5} col={config.cols - 2} />
-
-      {/* Floor lamp in corner */}
-      <Furniture type="lamp" row={3} col={config.cols - 1} />
-
-      {/* Dynamic desks based on team size */}
+      {/* Dynamic desks — placed first so decorations avoid them */}
       {config.desks.map((desk, i) => (
         <Furniture key={`desk-${i}`} type="desk" row={desk.row - 1} col={desk.col - 1} />
       ))}
 
-      {/* Static decorations — coffee & break area */}
-      <Furniture type="coffee" row={3} col={19} />
-      <Furniture type="water-cooler" row={3} col={21} />
-      <Furniture type="printer" row={5} col={19} />
-      <Furniture type="plant" row={3} col={17} />
-      {teamSize > 3 && <Furniture type="plant" row={6} col={17} />}
-      {teamSize > 6 && <Furniture type="plant" row={9} col={17} />}
+      {/* Right-side utility corridor (col 17-21) — below the wall */}
+      <Furniture type="whiteboard" row={3} col={17} />
+      <Furniture type="coffee" row={4.5} col={18} />
+      <Furniture type="water-cooler" row={4.5} col={20} />
+      <Furniture type="printer" row={7} col={18} />
+      <Furniture type="filing-cabinet" row={7} col={21} />
+      <Furniture type="lamp" row={9} col={21} />
 
-      {/* Task board on the wall */}
-      <Furniture type="whiteboard" row={3} col={config.cols - 5} />
+      {/* Plants — tucked into corners and gaps, away from desks */}
+      <Furniture type="plant" row={3} col={0} />
+      <Furniture type="plant" row={3} col={16} />
+      {teamSize > 5 && <Furniture type="plant" row={6} col={0} />}
+      {teamSize > 5 && <Furniture type="plant" row={6} col={16} />}
+      {teamSize > 9 && <Furniture type="plant" row={9} col={0} />}
+
+      {/* Bookshelf — along the wall ABOVE the first desk row */}
+      <Furniture type="bookshelf" row={3} col={1} />
 
       {/* Meeting rooms */}
       {config.meetingRooms.map((room, i) => (
