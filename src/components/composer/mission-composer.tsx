@@ -316,7 +316,7 @@ const DEMO_PRESETS: DemoPreset[] = [
 
 export function MissionComposer({ providers, onCreated }: MissionComposerProps) {
   const defaultProvider = useMemo(
-    () => providers.find((p) => p.configured)?.id ?? providers[0]?.id ?? "mock",
+    () => providers.find((p) => p.configured && p.id !== "mock")?.id ?? providers[0]?.id ?? "mock",
     [providers],
   );
   const [brief, setBrief] = useState("");

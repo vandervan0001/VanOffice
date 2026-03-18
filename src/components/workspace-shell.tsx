@@ -144,26 +144,8 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     setError(null);
   }
 
-  // Paperclip status banner
-  const paperclipBanner = paperclipStatus === "offline" ? (
-    <div className="mx-auto mb-3 max-w-[1600px] rounded-xl border border-[var(--attention)] bg-[var(--attention-bg)] px-4 py-3">
-      <div className="flex items-center gap-3">
-        <span className="text-lg">⚠️</span>
-        <div>
-          <p className="text-sm font-medium text-[var(--attention)]">
-            Paperclip is not running
-          </p>
-          <p className="text-xs text-[var(--text-secondary)]">
-            The app needs Paperclip AI for real agent orchestration. Running in demo/mock mode.
-            Start Paperclip with: <code className="rounded bg-white/50 px-1 py-0.5 text-[10px] font-mono">npm run paperclip</code>
-          </p>
-        </div>
-        <span className="ml-auto shrink-0 rounded-full bg-[var(--attention)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--attention)]">
-          Mock mode
-        </span>
-      </div>
-    </div>
-  ) : paperclipStatus === "online" ? (
+  // Status banner — no blocking Paperclip warnings, just provider info
+  const paperclipBanner = paperclipStatus === "online" ? (
     <div className="mx-auto mb-3 max-w-[1600px]">
       <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)]">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
