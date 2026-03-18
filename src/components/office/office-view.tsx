@@ -32,40 +32,77 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
       className="office-container relative mx-auto overflow-hidden rounded-xl"
       style={{ width: WIDTH, height: HEIGHT, minHeight: 448 }}
     >
-      {/* Floor: warm parquet */}
+      {/* Floor: warm parquet with grid */}
       <div
         className="absolute inset-0"
         style={{
-          backgroundColor: "#e8d8c0",
+          backgroundColor: "#e0c898",
           backgroundImage:
-            "repeating-linear-gradient(90deg, transparent, transparent 31px, rgba(0,0,0,0.03) 31px, rgba(0,0,0,0.03) 32px), repeating-linear-gradient(0deg, transparent, transparent 31px, rgba(0,0,0,0.03) 31px, rgba(0,0,0,0.03) 32px)",
+            "repeating-linear-gradient(90deg, transparent, transparent 31px, rgba(0,0,0,0.04) 31px, rgba(0,0,0,0.04) 32px), repeating-linear-gradient(0deg, transparent, transparent 31px, rgba(0,0,0,0.04) 31px, rgba(0,0,0,0.04) 32px)",
         }}
       />
 
-      {/* Back wall */}
+      {/* Sunlight gradient overlay from windows — lighter near top-left */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: "radial-gradient(ellipse 80% 50% at 25% 0%, rgba(255,220,120,0.18) 0%, transparent 70%), radial-gradient(ellipse 60% 40% at 65% 0%, rgba(255,210,100,0.12) 0%, transparent 60%)",
+        }}
+      />
+
+      {/* Back wall — warmer color with subtle wallpaper texture */}
       <div
         className="absolute left-0 right-0 top-0"
         style={{
           height: CELL * 2.5,
-          backgroundColor: "#f0ebe3",
-          borderBottom: "3px solid #c4b498",
+          backgroundColor: "#f2e4d0",
+          backgroundImage:
+            "repeating-linear-gradient(135deg, transparent, transparent 16px, rgba(200,150,80,0.06) 16px, rgba(200,150,80,0.06) 17px), repeating-linear-gradient(45deg, transparent, transparent 16px, rgba(200,150,80,0.06) 16px, rgba(200,150,80,0.06) 17px)",
+          borderBottom: "3px solid #c8a870",
         }}
       />
 
-      {/* Wall furniture — scales with office width */}
+      {/* Baseboard — thin darker strip at wall/floor boundary */}
+      <div
+        className="absolute left-0 right-0 pointer-events-none"
+        style={{
+          top: CELL * 2.5 + 3,
+          height: 5,
+          backgroundColor: "#a07840",
+          opacity: 0.55,
+        }}
+      />
+
+      {/* Wall furniture — windows, clock, poster, big monitor */}
       <Furniture type="window" row={0.5} col={2} />
       <Furniture type="window" row={0.5} col={6} />
       <Furniture type="window" row={0.5} col={11} />
       <Furniture type="clock" row={0.5} col={16} />
-      <Furniture type="poster" row={0.5} col={19} />
+      <Furniture type="poster" row={0.5} col={18} />
+
+      {/* Large dashboard monitor on wall */}
+      <Furniture type="monitor-big" row={0} col={config.cols - 6} />
+
+      {/* Bookshelves along the left side wall */}
+      <Furniture type="bookshelf" row={3} col={0} />
+      {teamSize > 4 && <Furniture type="bookshelf" row={6} col={0} />}
+
+      {/* Filing cabinets near wall */}
+      <Furniture type="filing-cabinet" row={3} col={config.cols - 2} />
+      <Furniture type="filing-cabinet" row={5} col={config.cols - 2} />
+
+      {/* Floor lamp in corner */}
+      <Furniture type="lamp" row={3} col={config.cols - 1} />
 
       {/* Dynamic desks based on team size */}
       {config.desks.map((desk, i) => (
         <Furniture key={`desk-${i}`} type="desk" row={desk.row - 1} col={desk.col - 1} />
       ))}
 
-      {/* Static decorations */}
+      {/* Static decorations — coffee & break area */}
       <Furniture type="coffee" row={3} col={19} />
+      <Furniture type="water-cooler" row={3} col={21} />
+      <Furniture type="printer" row={5} col={19} />
       <Furniture type="plant" row={3} col={17} />
       {teamSize > 3 && <Furniture type="plant" row={6} col={17} />}
       {teamSize > 6 && <Furniture type="plant" row={9} col={17} />}
@@ -84,9 +121,15 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
               left: room.col * CELL,
               width: room.w * CELL,
               height: room.h * CELL,
-              backgroundColor: "rgba(180, 160, 130, 0.15)",
-              border: "1px dashed rgba(0,0,0,0.06)",
+              backgroundColor: "rgba(160, 130, 100, 0.12)",
+              border: "1px dashed rgba(160,120,60,0.18)",
             }}
+          />
+          {/* Rug under meeting table */}
+          <Furniture
+            type="rug"
+            row={room.row + 0.3}
+            col={room.col + (room.w - 3) / 2}
           />
           {/* Table */}
           <Furniture
@@ -107,11 +150,12 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
               left: config.breakRoom.col * CELL,
               width: config.breakRoom.w * CELL,
               height: config.breakRoom.h * CELL,
-              backgroundColor: "rgba(160, 180, 160, 0.12)",
-              border: "1px dashed rgba(0,0,0,0.05)",
+              backgroundColor: "rgba(120, 180, 140, 0.1)",
+              border: "1px dashed rgba(80,160,100,0.12)",
             }}
           />
           <Furniture type="coffee" row={config.breakRoom.row + 0.5} col={config.breakRoom.col + 1} />
+          <Furniture type="couch" row={config.breakRoom.row + 1.5} col={config.breakRoom.col + 2} />
           <Furniture type="plant" row={config.breakRoom.row + 0.5} col={config.breakRoom.col + 4} />
           {/* Break room label */}
           <div
@@ -138,6 +182,7 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
             col={pos.col}
             color={AGENT_COLORS[index % AGENT_COLORS.length]}
             entryDelay={index * 500}
+            agentIndex={index}
           />
         );
       })}

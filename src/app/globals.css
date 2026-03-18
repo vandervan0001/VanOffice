@@ -68,6 +68,26 @@ select {
   animation: agent-enter 0.6s ease-out both;
 }
 
+/* Agent idle bob — subtle up/down when sitting at desk */
+@keyframes agent-idle-bob {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-2px); }
+}
+
+.agent-idle-bob {
+  animation: agent-idle-bob 3s ease-in-out infinite;
+}
+
+/* Bubble float — state icon floats gently */
+@keyframes bubble-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+}
+
+.bubble-float {
+  animation: bubble-float 2.5s ease-in-out infinite;
+}
+
 /* Responsive layout */
 @media (max-width: 1024px) {
   .workspace-grid {
