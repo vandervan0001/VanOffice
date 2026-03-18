@@ -22,6 +22,8 @@ Complete visual overhaul of Team Foundry from a dark, geek-oriented PixiJS rende
 - Custom office layout editor
 - Multi-team / multi-workspace
 - Browser automation tools for agents
+- Replay slider / event timeline scrubbing (was in v1, cut from v2 scope — can be re-added later)
+- Inline event log panel (debug traces available via browser devtools / API instead)
 
 ---
 
@@ -36,7 +38,7 @@ src/
 │   │   ├── office-view.tsx          # CSS Grid office, tile background, furniture placement
 │   │   ├── agent-sprite.tsx         # Agent: sprite img + state bubble + name label
 │   │   ├── furniture.tsx            # Static furniture pieces (desk, chair, plant, coffee)
-│   │   └── meeting-bubble.tsx       # Visual grouping when agents meet
+│   │   └── meeting-bubble.tsx       # Speech/thought bubble overlay shown above meeting table when 2+ agents gather
 │   ├── outputs/
 │   │   ├── artifact-panel.tsx       # Horizontal card strip below office
 │   │   └── artifact-card.tsx        # Single artifact: title, status badge, version, preview
@@ -100,18 +102,21 @@ Row 14:    Bottom wall accent
 ```typescript
 type GridPosition = { row: number; col: number; zone: 'desk' | 'meeting' | 'coffee' }
 
-function agentGridPosition(agentId: string, agentState: AgentVisualState): GridPosition
+// Uses the existing AgentState from src/lib/types.ts.
+// agentIndex is the agent's position in the team array, used for desk assignment.
+function agentGridPosition(agentIndex: number, agentState: AgentState): GridPosition
 ```
 
-State-to-position mapping:
+State-to-position mapping (covers all 7 AgentState values):
 - `idle` → assigned desk
-- `writing` → assigned desk
+- `planning` → assigned desk (with notepad bubble)
+- `writing` → assigned desk (with pencil bubble)
 - `researching` → assigned desk (with search bubble)
 - `meeting` → meeting room (chairs around table)
 - `waiting_for_approval` → assigned desk (with clock bubble)
 - `done` → assigned desk (with checkmark bubble)
 
-Each agent has a fixed desk assignment (agent index → desk slot). Only meetings cause physical movement.
+Each agent has a fixed desk assignment (agentIndex → desk slot). Only `meeting` state causes physical movement to the meeting zone.
 
 ### Agent Sprite Component
 
@@ -229,7 +234,18 @@ A small "Essayer avec un exemple" link below the button for the demo preset.
 1. Overlay fades out (300ms)
 2. Agents appear one by one from the left edge of the office, walking to their assigned desk (~0.5s stagger between each)
 3. Sidebar populates with the first approval gate: "Équipe proposée"
-4. User reviews the team proposal in the sidebar and approves/rejects
+4. The gate card expands to show: team roster (agent names, roles, responsibilities), rationale, and proposed task board summary
+5. User reviews the team proposal in the sidebar and approves/rejects
+
+### Team & Task Details
+
+The current v1 has separate panels for agent cards and task board. In v2, these details live inside the approval gate cards:
+
+- **Team proposal gate**: expands to show each agent (name, role, skills) and rationale
+- **Execution plan gate**: expands to show the task board (task titles, owners, dependencies, acceptance criteria)
+- **Final deliverables gate**: expands to show artifact summaries with approval actions
+
+This keeps the layout uncluttered while preserving all the detail the user needs at each checkpoint.
 
 ---
 
@@ -320,6 +336,7 @@ License: CC-BY-SA 3.0 / GPL 3.0 (credit required in README)
 - Magnifying glass (researching)
 - Clock/hourglass (waiting for approval)
 - Green checkmark (done)
+- Notepad (planning)
 - Pencil (writing)
 - Speech bubble with "..." (meeting)
 - Zzz (idle, optional)
@@ -336,7 +353,7 @@ If LPC doesn't have suitable modern-office tiles, create simple colored rectangl
 
 - `src/components/office-scene.tsx`
 - `src/lib/state/office.ts`
-- `src/types/better-sqlite3.d.ts` (if only used for PixiJS types)
+- (Keep `src/types/better-sqlite3.d.ts` — SQLite driver type shim, unrelated to PixiJS, still needed by better-sqlite3)
 
 ### Dependencies to Remove
 
