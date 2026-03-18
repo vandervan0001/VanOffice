@@ -103,8 +103,18 @@ export function buildCollisionMap(cfg: OfficeConfig): Set<string> {
     }
   }
 
-  // --- Ensure meeting seats are NOT blocked (agents need to stand there) ---
-  // This is handled implicitly since we only block walls/tables, not seat positions.
+  // --- Unblock desk seats (agents sit here) ---
+  for (const desk of cfg.desks) {
+    // Agent sits at desk center: row+1, col+1
+    blocked.delete(cellKey(desk.row + 1, desk.col + 1));
+    // Also clear the cell in front of the desk for walking away
+    blocked.delete(cellKey(desk.row + 2, desk.col + 1));
+  }
+
+  // --- Unblock meeting seats (agents stand/sit here) ---
+  for (const seat of cfg.meetingSeats) {
+    blocked.delete(cellKey(seat.row, seat.col));
+  }
 
   return blocked;
 }

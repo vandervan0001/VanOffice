@@ -754,8 +754,10 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           const ch = this.scale.height;
           if (!cw || !ch) return;
 
-          // Always fill the width. Let height overflow or pad.
-          const zoom = cw / this.worldW;
+          // Fit entire office in view (no clipping)
+          const zoomX = cw / this.worldW;
+          const zoomY = ch / this.worldH;
+          const zoom = Math.min(zoomX, zoomY);
 
           cam.setZoom(zoom);
           cam.setBounds(0, 0, this.worldW, this.worldH);
