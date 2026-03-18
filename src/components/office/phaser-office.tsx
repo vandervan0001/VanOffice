@@ -424,6 +424,546 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               )
               .setOrigin(0, 1);
           }
+
+          // ============================================================
+          //  RIGHT-SIDE ROOMS
+          // ============================================================
+
+          this.drawHallway(g, cfg);
+          this.drawBossOffice(g, cfg);
+          this.drawServerRoom(g, cfg);
+          this.drawArchives(g, cfg);
+          this.drawLounge(g, cfg);
+          this.drawRestrooms(g, cfg);
+        }
+
+        /* ---------------------------------------------------------- */
+        /*  Room-drawing helpers (right-side wing)                     */
+        /* ---------------------------------------------------------- */
+
+        /** Helper: draw room walls with a doorway gap at the bottom-centre */
+        private drawRoomWalls(
+          g: Phaser.GameObjects.Graphics,
+          room: { row: number; col: number; w: number; h: number },
+          doorSide: "bottom" | "left" = "bottom",
+        ) {
+          const rx = room.col * TILE;
+          const ry = room.row * TILE;
+          const rw = room.w * TILE;
+          const rh = room.h * TILE;
+          g.lineStyle(1.5, 0x6a5a4a, 0.8);
+
+          // Top wall
+          g.lineBetween(rx, ry, rx + rw, ry);
+          // Right wall
+          g.lineBetween(rx + rw, ry, rx + rw, ry + rh);
+          // Bottom wall with optional door
+          if (doorSide === "bottom") {
+            const doorX = rx + rw / 2;
+            g.lineBetween(rx, ry + rh, doorX - TILE * 0.7, ry + rh);
+            g.lineBetween(doorX + TILE * 0.7, ry + rh, rx + rw, ry + rh);
+          } else {
+            g.lineBetween(rx, ry + rh, rx + rw, ry + rh);
+          }
+          // Left wall with optional door
+          if (doorSide === "left") {
+            const doorY = ry + rh / 2;
+            g.lineBetween(rx, ry, rx, doorY - TILE * 0.7);
+            g.lineBetween(rx, doorY + TILE * 0.7, rx, ry + rh);
+          } else {
+            g.lineBetween(rx, ry, rx, ry + rh);
+          }
+        }
+
+        /** Room label */
+        private drawRoomLabel(
+          x: number,
+          y: number,
+          text: string,
+        ) {
+          this.add
+            .text(x, y, text, {
+              fontSize: "5px",
+              color: "#8a7a6a",
+              fontFamily: "sans-serif",
+            })
+            .setOrigin(0, 1);
+        }
+
+        /* ---- Hallway (vertical corridor connecting right-side rooms) ---- */
+
+        private drawHallway(
+          g: Phaser.GameObjects.Graphics,
+          cfg: OfficeConfig,
+        ) {
+          if (!cfg.hallway) return;
+          const hw = cfg.hallway;
+          const hx = hw.col * TILE;
+          const hy = hw.row * TILE;
+          const hh = hw.h * TILE;
+          const hww = hw.w * TILE;
+
+          // Floor — same as main office
+          for (let r = hw.row; r < hw.row + hw.h; r++) {
+            const shade = (r + hw.col) % 2 === 0 ? 0xc8a878 : 0xc4a474;
+            g.fillStyle(shade);
+            g.fillRect(hx, r * TILE, hww, TILE);
+          }
+
+          // Water cooler in hallway
+          try {
+            this.add.image(hx + TILE * 0.5, hy + TILE * 1, 'water-cooler')
+              .setOrigin(0.5, 0)
+              .setScale(0.4);
+          } catch { /* tile not loaded */ }
+
+          // Notice board (small rectangle on left wall)
+          g.fillStyle(0x8b6b4a);
+          g.fillRect(hx + 2, hy + TILE * 4, TILE * 0.6, TILE * 0.8);
+          g.fillStyle(0xf5f0e0);
+          g.fillRect(hx + 4, hy + TILE * 4 + 2, TILE * 0.6 - 4, TILE * 0.8 - 4);
+          // Coloured paper pins
+          g.fillStyle(0xdd4444);
+          g.fillRect(hx + 6, hy + TILE * 4 + 4, 3, 3);
+          g.fillStyle(0x44aa44);
+          g.fillRect(hx + 11, hy + TILE * 4 + 4, 3, 3);
+          g.fillStyle(0x4488dd);
+          g.fillRect(hx + 6, hy + TILE * 4 + 10, 3, 3);
+
+          // Fire extinguisher (small red rectangle)
+          g.fillStyle(0xcc2222);
+          g.fillRect(hx + 4, hy + TILE * 8, 5, TILE * 0.7);
+          g.fillStyle(0x333333);
+          g.fillRect(hx + 5, hy + TILE * 8 - 2, 3, 3);
+        }
+
+        /* ---- Boss Office ---- */
+
+        private drawBossOffice(
+          g: Phaser.GameObjects.Graphics,
+          cfg: OfficeConfig,
+        ) {
+          if (!cfg.bossOffice) return;
+          const room = cfg.bossOffice;
+          const rx = room.col * TILE;
+          const ry = room.row * TILE;
+          const rw = room.w * TILE;
+          const rh = room.h * TILE;
+
+          // Warm wood floor
+          for (let r = room.row; r < room.row + room.h; r++) {
+            for (let c = room.col; c < room.col + room.w; c++) {
+              const shade = (r + c) % 2 === 0 ? 0xc49a6c : 0xc0966a;
+              g.fillStyle(shade);
+              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+            }
+          }
+
+          // Rug (central area)
+          g.fillStyle(0x8b2222, 0.25);
+          g.fillRoundedRect(
+            rx + TILE * 2, ry + TILE * 1,
+            TILE * 6, TILE * 2, 3,
+          );
+          g.lineStyle(0.5, 0x8b2222, 0.35);
+          g.strokeRoundedRect(
+            rx + TILE * 2, ry + TILE * 1,
+            TILE * 6, TILE * 2, 3,
+          );
+
+          // Large executive desk (back wall)
+          g.fillStyle(0x5a3a1a);
+          g.fillRoundedRect(rx + TILE * 3, ry + TILE * 0.3, TILE * 4, TILE * 1.4, 2);
+          // Desk surface highlight
+          g.fillStyle(0x7a5a3a, 0.4);
+          g.fillRect(rx + TILE * 3.2, ry + TILE * 0.5, TILE * 3.6, TILE * 0.3);
+
+          // Big monitor
+          g.fillStyle(0x222222);
+          g.fillRect(rx + TILE * 4.2, ry + TILE * 0.1, TILE * 1.6, TILE * 0.9);
+          g.fillStyle(0x44aadd, 0.5);
+          g.fillRect(rx + TILE * 4.3, ry + TILE * 0.2, TILE * 1.4, TILE * 0.7);
+          // Monitor stand
+          g.fillStyle(0x333333);
+          g.fillRect(rx + TILE * 4.8, ry + TILE * 1.0, TILE * 0.4, TILE * 0.3);
+
+          // Leather chair (dark brown circle)
+          g.fillStyle(0x3a2a1a);
+          g.fillCircle(rx + TILE * 5, ry + TILE * 2.0, TILE * 0.4);
+          g.fillStyle(0x4a3a2a, 0.6);
+          g.fillCircle(rx + TILE * 5, ry + TILE * 2.0, TILE * 0.25);
+
+          // Bookshelf on right wall
+          g.fillStyle(0x6a4a2a);
+          g.fillRect(rx + rw - TILE * 1.8, ry + TILE * 0.2, TILE * 1.5, TILE * 2.8);
+          // Shelf lines
+          g.lineStyle(0.5, 0x5a3a1a, 0.6);
+          for (let s = 0; s < 4; s++) {
+            const sy = ry + TILE * 0.6 + s * TILE * 0.65;
+            g.lineBetween(rx + rw - TILE * 1.7, sy, rx + rw - TILE * 0.4, sy);
+          }
+          // Coloured book spines
+          const bookColors = [0x2244aa, 0xaa2222, 0x22aa44, 0xaaaa22, 0x8822aa];
+          for (let s = 0; s < 4; s++) {
+            const sy = ry + TILE * 0.3 + s * TILE * 0.65;
+            for (let b = 0; b < 4; b++) {
+              g.fillStyle(bookColors[(s + b) % bookColors.length], 0.7);
+              g.fillRect(
+                rx + rw - TILE * 1.6 + b * TILE * 0.3,
+                sy,
+                TILE * 0.2,
+                TILE * 0.55,
+              );
+            }
+          }
+
+          // Window on back wall
+          g.fillStyle(0xa8d8ea, 0.6);
+          g.fillRect(rx + TILE * 0.5, ry + TILE * 0.3, TILE * 2, TILE * 1.2);
+          g.lineStyle(0.8, 0x8ab8ca, 0.8);
+          g.strokeRect(rx + TILE * 0.5, ry + TILE * 0.3, TILE * 2, TILE * 1.2);
+          g.lineBetween(
+            rx + TILE * 1.5, ry + TILE * 0.3,
+            rx + TILE * 1.5, ry + TILE * 1.5,
+          );
+
+          // Nameplate on desk
+          g.fillStyle(0xd4af37);
+          g.fillRect(rx + TILE * 3.5, ry + TILE * 1.4, TILE * 1.2, TILE * 0.25);
+          this.add.text(
+            rx + TILE * 4.1, ry + TILE * 1.42,
+            "BOSS", {
+              fontSize: "4px",
+              color: "#3a2a1a",
+              fontFamily: "sans-serif",
+            },
+          ).setOrigin(0.5, 0);
+
+          // Walls and door
+          this.drawRoomWalls(g, room, "left");
+          this.drawRoomLabel(rx, ry - 6, "Boss Office");
+        }
+
+        /* ---- Server Room ---- */
+
+        private drawServerRoom(
+          g: Phaser.GameObjects.Graphics,
+          cfg: OfficeConfig,
+        ) {
+          if (!cfg.serverRoom) return;
+          const room = cfg.serverRoom;
+          const rx = room.col * TILE;
+          const ry = room.row * TILE;
+          const rw = room.w * TILE;
+          const rh = room.h * TILE;
+
+          // Dark floor
+          for (let r = room.row; r < room.row + room.h; r++) {
+            for (let c = room.col; c < room.col + room.w; c++) {
+              const shade = (r + c) % 2 === 0 ? 0x3a3a4a : 0x38384a;
+              g.fillStyle(shade);
+              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+            }
+          }
+
+          // Blue tint overlay
+          const blueOverlay = this.add.graphics();
+          blueOverlay.fillStyle(0x2244aa, 0.08);
+          blueOverlay.fillRect(rx, ry, rw, rh);
+
+          // Server racks (tall rectangles)
+          const rackColors = [0x2a2a2a, 0x333333, 0x2a2a2a];
+          for (let i = 0; i < 3; i++) {
+            const rackX = rx + TILE * 0.5 + i * TILE * 1.5;
+            const rackY = ry + TILE * 0.3;
+            const rackW = TILE * 1.0;
+            const rackH = TILE * 3.0;
+
+            // Rack body
+            g.fillStyle(rackColors[i]);
+            g.fillRect(rackX, rackY, rackW, rackH);
+            // Rack border
+            g.lineStyle(0.5, 0x555555, 0.6);
+            g.strokeRect(rackX, rackY, rackW, rackH);
+
+            // Blinking indicator lights (coloured dots)
+            const lightColors = [0x00ff44, 0x44aaff, 0xff8800, 0x00ff44, 0x44aaff];
+            for (let l = 0; l < 5; l++) {
+              const lx = rackX + TILE * 0.2;
+              const ly = rackY + TILE * 0.3 + l * TILE * 0.55;
+              g.fillStyle(lightColors[l], 0.9);
+              g.fillCircle(lx, ly, 1.5);
+              // Second light
+              g.fillStyle(lightColors[(l + 2) % 5], 0.7);
+              g.fillCircle(lx + TILE * 0.6, ly, 1.5);
+            }
+
+            // Ventilation lines
+            g.lineStyle(0.3, 0x555555, 0.4);
+            for (let v = 0; v < 6; v++) {
+              const vy = rackY + TILE * 0.2 + v * TILE * 0.5;
+              g.lineBetween(rackX + 2, vy, rackX + rackW - 2, vy);
+            }
+          }
+
+          // Cable tray (across top)
+          g.fillStyle(0x444444);
+          g.fillRect(rx + TILE * 0.3, ry + TILE * 0.1, rw - TILE * 0.6, 3);
+          // Cables (coloured lines from tray down)
+          const cableColors = [0x2266dd, 0xdd6622, 0x22aa44];
+          for (let cb = 0; cb < 3; cb++) {
+            g.lineStyle(0.5, cableColors[cb], 0.5);
+            const cx = rx + TILE * 1.0 + cb * TILE * 1.5;
+            g.lineBetween(cx, ry + TILE * 0.1, cx, ry + TILE * 0.3);
+          }
+
+          // Walls and door
+          this.drawRoomWalls(g, room, "left");
+          this.drawRoomLabel(rx, ry - 6, "Server Room");
+        }
+
+        /* ---- Archives Room ---- */
+
+        private drawArchives(
+          g: Phaser.GameObjects.Graphics,
+          cfg: OfficeConfig,
+        ) {
+          if (!cfg.archives) return;
+          const room = cfg.archives;
+          const rx = room.col * TILE;
+          const ry = room.row * TILE;
+          const rw = room.w * TILE;
+          const rh = room.h * TILE;
+
+          // Slightly darker warm floor
+          for (let r = room.row; r < room.row + room.h; r++) {
+            for (let c = room.col; c < room.col + room.w; c++) {
+              const shade = (r + c) % 2 === 0 ? 0xb8a080 : 0xb49c7c;
+              g.fillStyle(shade);
+              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+            }
+          }
+
+          // Dim warm light overlay
+          const warmOverlay = this.add.graphics();
+          warmOverlay.fillStyle(0xaa8844, 0.05);
+          warmOverlay.fillRect(rx, ry, rw, rh);
+
+          // Filing cabinets (2 rows)
+          for (let row = 0; row < 2; row++) {
+            for (let cab = 0; cab < 4; cab++) {
+              const cx = rx + TILE * 0.4 + cab * TILE * 1.4;
+              const cy = ry + TILE * 0.3 + row * TILE * 1.8;
+              const cw = TILE * 1.0;
+              const ch = TILE * 1.5;
+
+              // Cabinet body
+              g.fillStyle(row === 0 ? 0x888888 : 0x7a7a7a);
+              g.fillRect(cx, cy, cw, ch);
+              g.lineStyle(0.5, 0x666666, 0.5);
+              g.strokeRect(cx, cy, cw, ch);
+
+              // Drawer lines
+              g.lineStyle(0.4, 0x666666, 0.6);
+              for (let d = 1; d <= 3; d++) {
+                g.lineBetween(cx + 1, cy + d * (ch / 4), cx + cw - 1, cy + d * (ch / 4));
+              }
+              // Drawer handles
+              for (let d = 0; d < 4; d++) {
+                g.fillStyle(0xaaaaaa, 0.7);
+                g.fillRect(cx + cw / 2 - 2, cy + d * (ch / 4) + (ch / 8) - 1, 4, 2);
+              }
+            }
+          }
+
+          // Boxes on floor (bottom-right corner)
+          const boxColors = [0x8b6b4a, 0x9a7a5a, 0x7a5a3a];
+          for (let b = 0; b < 3; b++) {
+            g.fillStyle(boxColors[b]);
+            g.fillRect(
+              rx + rw - TILE * 1.5 + b * TILE * 0.35,
+              ry + rh - TILE * 0.9,
+              TILE * 0.6,
+              TILE * 0.6,
+            );
+            g.lineStyle(0.3, 0x5a4a3a, 0.4);
+            g.strokeRect(
+              rx + rw - TILE * 1.5 + b * TILE * 0.35,
+              ry + rh - TILE * 0.9,
+              TILE * 0.6,
+              TILE * 0.6,
+            );
+          }
+
+          // Walls and door
+          this.drawRoomWalls(g, room, "left");
+          this.drawRoomLabel(rx, ry - 6, "Archives");
+        }
+
+        /* ---- Lounge / Break Room ---- */
+
+        private drawLounge(
+          g: Phaser.GameObjects.Graphics,
+          cfg: OfficeConfig,
+        ) {
+          if (!cfg.lounge) return;
+          const room = cfg.lounge;
+          const rx = room.col * TILE;
+          const ry = room.row * TILE;
+          const rw = room.w * TILE;
+          const rh = room.h * TILE;
+
+          // Warm floor
+          for (let r = room.row; r < room.row + room.h; r++) {
+            for (let c = room.col; c < room.col + room.w; c++) {
+              const shade = (r + c) % 2 === 0 ? 0xc8a878 : 0xc4a474;
+              g.fillStyle(shade);
+              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+            }
+          }
+
+          // Couch 1 (left side, facing right)
+          g.fillStyle(0x5a6a9a);
+          g.fillRoundedRect(rx + TILE * 0.5, ry + TILE * 0.5, TILE * 1.2, TILE * 2.5, 3);
+          g.fillStyle(0x4a5a8a, 0.5);
+          g.fillRect(rx + TILE * 0.5, ry + TILE * 0.5, TILE * 1.2, TILE * 0.4);
+          g.fillRect(rx + TILE * 0.5, ry + TILE * 2.6, TILE * 1.2, TILE * 0.4);
+
+          // Couch 2 (right side, facing left)
+          g.fillStyle(0x5a6a9a);
+          g.fillRoundedRect(rx + TILE * 4.5, ry + TILE * 0.5, TILE * 1.2, TILE * 2.5, 3);
+          g.fillStyle(0x4a5a8a, 0.5);
+          g.fillRect(rx + TILE * 4.5, ry + TILE * 0.5, TILE * 1.2, TILE * 0.4);
+          g.fillRect(rx + TILE * 4.5, ry + TILE * 2.6, TILE * 1.2, TILE * 0.4);
+
+          // Coffee table between couches
+          g.fillStyle(0x7a5a3a);
+          g.fillRoundedRect(rx + TILE * 2.2, ry + TILE * 1.0, TILE * 1.8, TILE * 1.5, 2);
+          g.fillStyle(0x9a7a5a, 0.3);
+          g.fillRect(rx + TILE * 2.4, ry + TILE * 1.2, TILE * 1.4, TILE * 0.2);
+
+          // Wall-mounted TV (top wall)
+          g.fillStyle(0x111111);
+          g.fillRect(rx + TILE * 2.5, ry + TILE * 0.05, TILE * 2.0, TILE * 0.15);
+          g.fillRect(rx + TILE * 2.2, ry - TILE * 0.2, TILE * 2.6, TILE * 0.2);
+          // TV screen (in wall)
+          try {
+            this.add.image(rx + TILE * 3.5, ry + 2, 'tv')
+              .setOrigin(0.5, 0)
+              .setScale(0.3);
+          } catch {
+            g.fillStyle(0x222244);
+            g.fillRect(rx + TILE * 2.5, ry + 2, TILE * 2, TILE * 0.8);
+          }
+
+          // Vending machine (right side)
+          g.fillStyle(0x2244aa);
+          g.fillRect(rx + TILE * 6.5, ry + TILE * 0.3, TILE * 1.2, TILE * 2.0);
+          g.lineStyle(0.5, 0x1a3388, 0.6);
+          g.strokeRect(rx + TILE * 6.5, ry + TILE * 0.3, TILE * 1.2, TILE * 2.0);
+          // Display window
+          g.fillStyle(0xaaddff, 0.3);
+          g.fillRect(rx + TILE * 6.6, ry + TILE * 0.4, TILE * 1.0, TILE * 1.0);
+          // Coloured product rows
+          const vendColors = [0xdd2222, 0x22dd22, 0xddaa22, 0x2222dd];
+          for (let v = 0; v < 4; v++) {
+            g.fillStyle(vendColors[v], 0.7);
+            g.fillRect(rx + TILE * 6.7 + v * TILE * 0.22, ry + TILE * 0.5, TILE * 0.15, TILE * 0.8);
+          }
+          // Coin slot
+          g.fillStyle(0x333333);
+          g.fillRect(rx + TILE * 7.1, ry + TILE * 1.6, TILE * 0.2, TILE * 0.1);
+
+          // Potted plants
+          const plantPositions = [
+            [rx + rw - TILE * 0.6, ry + rh - TILE * 0.8],
+            [rx + TILE * 0.4, ry + rh - TILE * 0.6],
+          ];
+          for (const [px, py] of plantPositions) {
+            g.fillStyle(0x8a5a3a);
+            g.fillRect(px - 3, py + 2, 8, 5);
+            g.fillStyle(0x4a8a3a, 0.85);
+            g.fillCircle(px + 1, py - 2, 5);
+            g.fillStyle(0x5aaa4a, 0.7);
+            g.fillCircle(px - 2, py, 4);
+            g.fillCircle(px + 4, py, 4);
+          }
+
+          // Walls and door
+          this.drawRoomWalls(g, room, "left");
+          this.drawRoomLabel(rx, ry - 6, "Lounge");
+        }
+
+        /* ---- Restrooms ---- */
+
+        private drawRestrooms(
+          g: Phaser.GameObjects.Graphics,
+          cfg: OfficeConfig,
+        ) {
+          if (!cfg.restrooms) return;
+          const room = cfg.restrooms;
+          const rx = room.col * TILE;
+          const ry = room.row * TILE;
+          const rw = room.w * TILE;
+          const rh = room.h * TILE;
+
+          // Grey floor
+          for (let r = room.row; r < room.row + room.h; r++) {
+            for (let c = room.col; c < room.col + room.w; c++) {
+              const shade = (r + c) % 2 === 0 ? 0xaaaaaa : 0xa6a6a6;
+              g.fillStyle(shade);
+              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+            }
+          }
+
+          // Two doors side by side
+          const doorW = TILE * 1.0;
+          const doorH = TILE * 1.8;
+          const doorGap = TILE * 0.4;
+          const doorsStartX = rx + (rw - doorW * 2 - doorGap) / 2;
+          const doorY = ry + TILE * 0.8;
+
+          // Door M
+          g.fillStyle(0x8b6b4a);
+          g.fillRect(doorsStartX, doorY, doorW, doorH);
+          g.lineStyle(0.5, 0x6a4a2a, 0.8);
+          g.strokeRect(doorsStartX, doorY, doorW, doorH);
+          // Handle
+          g.fillStyle(0xd4af37);
+          g.fillCircle(doorsStartX + doorW - 4, doorY + doorH * 0.55, 2);
+
+          this.add.text(
+            doorsStartX + doorW / 2, doorY + doorH * 0.3,
+            "M", {
+              fontSize: "8px",
+              color: "#ffffff",
+              fontFamily: "sans-serif",
+              fontStyle: "bold",
+            },
+          ).setOrigin(0.5, 0.5);
+
+          // Door F
+          const door2X = doorsStartX + doorW + doorGap;
+          g.fillStyle(0x8b6b4a);
+          g.fillRect(door2X, doorY, doorW, doorH);
+          g.lineStyle(0.5, 0x6a4a2a, 0.8);
+          g.strokeRect(door2X, doorY, doorW, doorH);
+          g.fillStyle(0xd4af37);
+          g.fillCircle(door2X + doorW - 4, doorY + doorH * 0.55, 2);
+
+          this.add.text(
+            door2X + doorW / 2, doorY + doorH * 0.3,
+            "F", {
+              fontSize: "8px",
+              color: "#ffffff",
+              fontFamily: "sans-serif",
+              fontStyle: "bold",
+            },
+          ).setOrigin(0.5, 0.5);
+
+          // Walls and door
+          this.drawRoomWalls(g, room, "left");
+          this.drawRoomLabel(rx, ry - 6, "Restrooms");
         }
 
         /* ---------------------------------------------------------- */

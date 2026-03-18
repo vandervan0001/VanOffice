@@ -6,13 +6,26 @@ export interface GridPosition {
   zone: "desk" | "meeting";
 }
 
+export interface RoomRect {
+  row: number;
+  col: number;
+  w: number;
+  h: number;
+}
+
 export interface OfficeConfig {
   cols: number;
   rows: number;
   desks: GridPosition[];
   meetingSeats: GridPosition[];
-  meetingRooms: Array<{ row: number; col: number; w: number; h: number }>;
-  breakRoom: { row: number; col: number; w: number; h: number } | null;
+  meetingRooms: RoomRect[];
+  breakRoom: RoomRect | null;
+  bossOffice: RoomRect | null;
+  serverRoom: RoomRect | null;
+  archives: RoomRect | null;
+  lounge: RoomRect | null;
+  restrooms: RoomRect | null;
+  hallway: RoomRect | null;
 }
 
 // Desk layout: 4 columns of desks, wider open-plan office
@@ -93,7 +106,33 @@ export function generateOfficeConfig(teamSize: number): OfficeConfig {
 
   const breakRoom = { row: breakRoomStartRow, col: 1, w: 12, h: breakRoomHeight };
 
-  return { cols: totalCols, rows: totalRows, desks, meetingSeats, meetingRooms, breakRoom };
+  // --- Right-side rooms (cols 15-27) ---
+  // Ensure enough rows for right-side rooms (minimum 16 rows)
+  const rightSideMinRows = 16;
+  const finalRows = Math.max(totalRows, rightSideMinRows);
+
+  const bossOffice: RoomRect = { row: 3, col: 16, w: 11, h: 4 };
+  const serverRoom: RoomRect = { row: 7, col: 16, w: 5, h: 4 };
+  const archives: RoomRect = { row: 7, col: 21, w: 6, h: 4 };
+  const lounge: RoomRect = { row: 11, col: 16, w: 8, h: 4 };
+  const restrooms: RoomRect = { row: 11, col: 24, w: 3, h: 4 };
+  // Hallway: vertical strip connecting right-side rooms
+  const hallway: RoomRect = { row: 3, col: 15, w: 1, h: 12 };
+
+  return {
+    cols: totalCols,
+    rows: finalRows,
+    desks,
+    meetingSeats,
+    meetingRooms,
+    breakRoom,
+    bossOffice,
+    serverRoom,
+    archives,
+    lounge,
+    restrooms,
+    hallway,
+  };
 }
 
 // Backwards-compatible fixed configs for tests
