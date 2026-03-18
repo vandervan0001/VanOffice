@@ -19,12 +19,44 @@ async function fetchSnapshot(workspaceId: string): Promise<WorkspaceSnapshot> {
   return res.json() as Promise<WorkspaceSnapshot>;
 }
 
+function deriveSuggestions(snapshot: WorkspaceSnapshot | null): string[] {
+  if (!snapshot) return [];
+
+  const status = snapshot.workspace.status;
+
+  // Has team but no execution yet
+  if (status === "awaiting_team_approval" || status === "awaiting_plan_approval") {
+    const base = ["Start execution", "Adjust team composition", "Add constraints"];
+    // Add mission-specific suggestions from output expectations
+    if (snapshot.expectedOutputs.length > 0) {
+      const outputSuggestions = snapshot.expectedOutputs.slice(0, 2).map(
+        (output) => `Draft ${output.toLowerCase()}`
+      );
+      return [...base, ...outputSuggestions];
+    }
+    return base;
+  }
+
+  // Running
+  if (status === "running") {
+    return ["Check progress", "Prioritize deliverables", "Request status update"];
+  }
+
+  // Complete or awaiting final approval
+  if (status === "complete" || status === "awaiting_final_approval") {
+    return ["Export all deliverables", "Start follow-up mission", "Generate executive summary"];
+  }
+
+  return [];
+}
+
 export function WorkspaceShell({ providers }: WorkspaceShellProps) {
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
   const [busyGate, setBusyGate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const workspaceId = workspace?.workspace.id;
+  const suggestions = deriveSuggestions(workspace);
 
   useEffect(() => {
     const id = new URL(window.location.href).searchParams.get("workspace");
@@ -95,12 +127,30 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     );
   }
 
+  function handleNewTeam() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("workspace");
+    window.history.replaceState({}, "", url);
+    setWorkspace(null);
+    setError(null);
+  }
+
   // Active workspace: 50/50 layout with margins
   // Left = office (top) + deliverables (bottom)
   // Right = validations card + chatbox card (separate)
   return (
     <main className="h-screen bg-[var(--background)] p-4">
-      <div className="mx-auto flex h-full max-w-[1600px] gap-4">
+      {/* New team button */}
+      <div className="mx-auto mb-2 max-w-[1600px]">
+        <button
+          type="button"
+          onClick={handleNewTeam}
+          className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-secondary)] transition hover:border-[var(--foreground)]/30 hover:text-[var(--foreground)]"
+        >
+          &larr; New team
+        </button>
+      </div>
+      <div className="mx-auto flex h-[calc(100%-2rem)] max-w-[1600px] gap-4">
         {/* LEFT COLUMN: office + deliverables */}
         <div className="flex flex-1 flex-col gap-4">
           {/* Office */}
@@ -127,7 +177,7 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
 
           {/* Chatbox card — separate */}
           <div className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <CommandInput />
+            <CommandInput suggestions={suggestions} />
           </div>
         </div>
       </div>

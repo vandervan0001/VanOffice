@@ -22,6 +22,9 @@ export function ApprovalGateCard({
   const isApproved = gate.status === "approved";
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
+  const [hiddenAgents, setHiddenAgents] = useState<Set<string>>(new Set());
+  const [newRole, setNewRole] = useState("");
+  const [addedRoles, setAddedRoles] = useState<string[]>([]);
 
   const bgClass = isPending
     ? "bg-[var(--pending-bg)] border-[var(--pending)]"
@@ -57,14 +60,74 @@ export function ApprovalGateCard({
           <p className="text-xs font-medium text-[var(--text-secondary)]">
             Proposed team: {teamProposal.name}
           </p>
-          {teamProposal.roles.map((member) => (
-            <div key={member.agentId} className="rounded-lg bg-white/60 p-2">
+          {teamProposal.roles
+            .filter((member) => !hiddenAgents.has(member.agentId))
+            .map((member) => (
+            <div key={member.agentId} className="group relative rounded-lg bg-white/60 p-2">
+              <button
+                type="button"
+                onClick={() => setHiddenAgents((prev) => new Set([...prev, member.agentId]))}
+                className="absolute right-1.5 top-1.5 hidden h-4 w-4 items-center justify-center rounded-full text-[10px] text-[var(--text-muted)] transition hover:bg-[var(--attention-bg)] hover:text-[var(--attention)] group-hover:flex"
+                title="Remove from team"
+              >
+                &times;
+              </button>
               <p className="text-xs font-medium">{member.displayName}</p>
               <p className="text-[10px] text-[var(--text-secondary)]">
                 {member.title} — {member.rationale}
               </p>
             </div>
           ))}
+
+          {/* Added roles (UI-only) */}
+          {addedRoles.map((role) => (
+            <div key={role} className="group relative rounded-lg border border-dashed border-[var(--border)] bg-white/40 p-2">
+              <button
+                type="button"
+                onClick={() => setAddedRoles((prev) => prev.filter((r) => r !== role))}
+                className="absolute right-1.5 top-1.5 hidden h-4 w-4 items-center justify-center rounded-full text-[10px] text-[var(--text-muted)] transition hover:bg-[var(--attention-bg)] hover:text-[var(--attention)] group-hover:flex"
+                title="Remove role"
+              >
+                &times;
+              </button>
+              <p className="text-xs font-medium text-[var(--text-secondary)]">{role}</p>
+              <p className="text-[10px] text-[var(--text-muted)]">Custom role (pending)</p>
+            </div>
+          ))}
+
+          {/* Add role input */}
+          <div className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newRole.trim()) {
+                  setAddedRoles((prev) => [...prev, newRole.trim()]);
+                  setNewRole("");
+                }
+              }}
+              placeholder="Add a role..."
+              className="flex-1 rounded-lg border border-[var(--border)] bg-white px-2 py-1.5 text-[11px] text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--success)]"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (newRole.trim()) {
+                  setAddedRoles((prev) => [...prev, newRole.trim()]);
+                  setNewRole("");
+                }
+              }}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-white text-sm text-[var(--text-secondary)] transition hover:border-[var(--success)] hover:text-[var(--success)]"
+              title="Add role"
+            >
+              +
+            </button>
+          </div>
+
+          <p className="text-[9px] text-[var(--text-muted)]">
+            Team editing will affect execution in v3
+          </p>
         </div>
       )}
 

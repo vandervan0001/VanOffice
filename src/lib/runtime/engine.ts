@@ -350,7 +350,197 @@ async function persistUploads(
   );
 }
 
+function generateMockContent(title: string, type: string): string {
+  switch (type) {
+    case "mission-framework":
+      return [
+        `# ${title}`,
+        "",
+        "## Executive Summary",
+        `This framework outlines the strategic approach for ${title.toLowerCase()}. The mission has been scoped to deliver measurable outcomes within the defined constraints.`,
+        "",
+        "## Objectives",
+        "- Define clear success metrics and key results",
+        "- Establish execution timeline with phase gates",
+        "- Identify critical dependencies and resource requirements",
+        "- Align stakeholders on priorities and trade-offs",
+        "",
+        "## Working Assumptions",
+        "- The team operates with current resource constraints unless otherwise noted",
+        "- First-pass outputs prioritize speed over polish",
+        "- All assumptions will be validated during the research phase",
+        "",
+        "## Success Criteria",
+        "- [ ] All deliverables address the original brief requirements",
+        "- [ ] Recommendations are backed by evidence or documented reasoning",
+        "- [ ] Stakeholder review completed with no blocking concerns",
+      ].join("\n");
+
+    case "research-findings":
+      return [
+        `# ${title}`,
+        "",
+        "## Key Findings",
+        "- **Finding 1:** Initial landscape analysis reveals several underexplored opportunities",
+        "- **Finding 2:** Existing benchmarks suggest room for improvement in core metrics",
+        "- **Finding 3:** Competitive signals indicate a shifting market dynamic",
+        "",
+        "## Methodology",
+        "- Desktop research across industry publications and databases",
+        "- Analysis of publicly available competitor materials",
+        "- Cross-referencing with internal data where available",
+        "",
+        "## Sources & References",
+        "- Industry reports and white papers (to be cited inline)",
+        "- Public filings and press releases",
+        "- Expert commentary and analyst notes",
+        "",
+        "## Gaps & Open Questions",
+        "- Additional primary research may be needed to validate assumptions",
+        "- Certain data points require access to proprietary databases",
+      ].join("\n");
+
+    case "strategy-document":
+      return [
+        `# ${title}`,
+        "",
+        "## Recommendations",
+        "1. **Short-term:** Prioritize quick wins that demonstrate momentum",
+        "2. **Medium-term:** Build systematic capabilities for sustained execution",
+        "3. **Long-term:** Position for market leadership through differentiation",
+        "",
+        "## Rationale",
+        "These recommendations are grounded in the research findings and aligned with the mission objectives. Each recommendation maps to a measurable outcome.",
+        "",
+        "## Proposed Timeline",
+        "| Phase | Duration | Focus |",
+        "|-------|----------|-------|",
+        "| Phase 1 | Weeks 1-2 | Foundation and quick wins |",
+        "| Phase 2 | Weeks 3-6 | Core execution |",
+        "| Phase 3 | Weeks 7-8 | Optimization and handoff |",
+        "",
+        "## Risks & Mitigations",
+        "- **Resource constraints:** Mitigate with phased rollout and clear prioritization",
+        "- **Market shifts:** Build in review checkpoints to adapt strategy",
+        "- **Execution gaps:** Assign clear ownership for each deliverable",
+      ].join("\n");
+
+    case "competitive-analysis":
+      return [
+        `# ${title}`,
+        "",
+        "## Competitor Overview",
+        "| Competitor | Positioning | Key Strength | Key Weakness |",
+        "|-----------|-------------|--------------|--------------|",
+        "| Competitor A | Market leader | Brand recognition | Slow to innovate |",
+        "| Competitor B | Challenger | Aggressive pricing | Limited reach |",
+        "| Competitor C | Niche player | Deep expertise | Narrow focus |",
+        "",
+        "## Strengths & Weaknesses",
+        "- Most competitors focus on breadth over depth",
+        "- Pricing models vary significantly across the landscape",
+        "- Customer retention strategies remain underdeveloped in the segment",
+        "",
+        "## Opportunities",
+        "- Underserved segments present clear entry points",
+        "- Differentiation through superior execution and speed",
+        "- Partnership potential with adjacent players",
+      ].join("\n");
+
+    case "marketing-plan":
+      return [
+        `# ${title}`,
+        "",
+        "## Channel Strategy",
+        "- **Owned channels:** Website, blog, email newsletter",
+        "- **Earned channels:** PR, thought leadership, community engagement",
+        "- **Paid channels:** Targeted campaigns aligned with ICP",
+        "",
+        "## Messaging Framework",
+        "- **Primary message:** Value proposition tied to the core mission objective",
+        "- **Supporting proof points:** Data, testimonials, and case studies",
+        "- **Tone:** Authoritative yet approachable",
+        "",
+        "## Timeline & Milestones",
+        "- Week 1: Messaging finalized and creative assets in production",
+        "- Week 2-3: Channel activation and initial outreach",
+        "- Week 4+: Performance review and optimization cycle",
+        "",
+        "## Budget Considerations",
+        "- Allocate majority of spend to highest-ROI channels",
+        "- Reserve budget for experimentation and iteration",
+        "- Track CAC and attribution across all touchpoints",
+      ].join("\n");
+
+    case "sales-playbook":
+      return [
+        `# ${title}`,
+        "",
+        "## Ideal Customer Profile (ICP)",
+        "- **Industry:** Target verticals with highest propensity to convert",
+        "- **Company size:** Mid-market to enterprise (50-500 employees)",
+        "- **Decision maker:** VP-level or above with budget authority",
+        "- **Pain points:** Operational inefficiency, competitive pressure, growth targets",
+        "",
+        "## Outreach Approach",
+        "- Multi-touch sequence combining email, LinkedIn, and phone",
+        "- Personalized messaging based on prospect research",
+        "- Value-first positioning with clear call to action",
+        "",
+        "## Objection Handling",
+        "- **\"Too expensive\":** Reframe around ROI and total cost of inaction",
+        "- **\"Not a priority\":** Connect to their stated business objectives",
+        "- **\"Already have a solution\":** Differentiate on specific capability gaps",
+      ].join("\n");
+
+    case "financial-analysis":
+      return [
+        `# ${title}`,
+        "",
+        "## Key Metrics",
+        "| Metric | Current | Target | Gap |",
+        "|--------|---------|--------|-----|",
+        "| Revenue | TBD | TBD | — |",
+        "| Margin | TBD | TBD | — |",
+        "| Burn rate | TBD | TBD | — |",
+        "",
+        "## Projections",
+        "- **Base case:** Conservative assumptions with current trajectory",
+        "- **Upside case:** Accelerated growth with successful execution",
+        "- **Downside case:** Risk scenario with mitigation measures",
+        "",
+        "## Financial Risks",
+        "- Revenue concentration in a single channel or customer segment",
+        "- Cost escalation without corresponding growth in returns",
+        "- Currency or market volatility exposure",
+      ].join("\n");
+
+    default:
+      return [
+        `# ${title}`,
+        "",
+        "## Overview",
+        `This document covers the key aspects of ${title.toLowerCase()}. The analysis is structured to provide actionable insights and clear next steps.`,
+        "",
+        "## Key Points",
+        "- Initial assessment indicates several areas of opportunity",
+        "- Current state analysis reveals both strengths and gaps",
+        "- Stakeholder alignment is critical for successful execution",
+        "- Resource allocation should follow priority ranking",
+        "",
+        "## Analysis",
+        "The following sections will be populated as the team completes their research and synthesis phases. Each section maps to a specific task in the execution plan.",
+        "",
+        "## Next Steps",
+        "1. Validate assumptions with available data",
+        "2. Incorporate feedback from the review cycle",
+        "3. Finalize recommendations and delivery timeline",
+      ].join("\n");
+  }
+}
+
 function firstArtifact(title: string, type: string, taskId: string): ArtifactRecord {
+  const content = generateMockContent(title, type);
   return {
     id: type,
     title,
@@ -363,7 +553,7 @@ function firstArtifact(title: string, type: string, taskId: string): ArtifactRec
       {
         version: 1,
         createdAt: Date.now(),
-        content: `# ${title}\n\nDraft pending runtime execution.`,
+        content,
         notes: "Placeholder created with the task board.",
         sourceTaskIds: [taskId],
         citations: [],
