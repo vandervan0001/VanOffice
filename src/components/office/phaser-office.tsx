@@ -1294,10 +1294,10 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           const ch = this.scale.height;
           if (!cw || !ch) return;
 
-          // Fit entire office in view (no clipping)
+          // Fit width — fills the container horizontally, clips or scrolls vertically
           const zoomX = cw / this.worldW;
           const zoomY = ch / this.worldH;
-          const zoom = Math.min(zoomX, zoomY);
+          const zoom = Math.max(zoomX, zoomY * 0.95); // Prefer width-fill, slight vertical squeeze OK
 
           cam.setZoom(zoom);
           cam.setBounds(0, 0, this.worldW, this.worldH);
