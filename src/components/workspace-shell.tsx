@@ -96,23 +96,29 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     );
   }
 
-  // Active workspace: L-shaped layout
+  // Active workspace: full-screen layout — office left 70%, sidebar right 30%
   return (
-    <main className="min-h-screen bg-[var(--background)]">
+    <main className="h-screen overflow-hidden bg-[var(--background)]">
       <div
-        className="workspace-grid mx-auto grid max-w-[1200px] gap-4 px-4 py-8"
+        className="workspace-grid grid h-full"
         style={{
-          gridTemplateColumns: "1fr 250px",
-          gridTemplateRows: "auto auto",
+          gridTemplateColumns: "1fr 320px",
+          gridTemplateRows: "1fr auto",
         }}
       >
-        {/* Top-left: Pixel Office */}
-        <section style={{ gridColumn: "1", gridRow: "1" }}>
+        {/* Left: Pixel Office — fills available height, no scroll */}
+        <section
+          className="overflow-hidden"
+          style={{ gridColumn: "1", gridRow: "1" }}
+        >
           <OfficeView snapshot={workspace} />
         </section>
 
-        {/* Right sidebar (spans both rows) */}
-        <div style={{ gridColumn: "2", gridRow: "1 / -1" }}>
+        {/* Right sidebar — same height as office, scrolls internally */}
+        <div
+          className="overflow-y-auto border-l border-[var(--border)]"
+          style={{ gridColumn: "2", gridRow: "1 / -1" }}
+        >
           <ApprovalSidebar
             snapshot={workspace}
             busyGate={busyGate}
@@ -121,7 +127,10 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         </div>
 
         {/* Bottom-left: Artifacts */}
-        <div style={{ gridColumn: "1", gridRow: "2" }}>
+        <div
+          className="border-t border-[var(--border)]"
+          style={{ gridColumn: "1", gridRow: "2" }}
+        >
           <ArtifactPanel artifacts={workspace.artifacts} />
         </div>
       </div>

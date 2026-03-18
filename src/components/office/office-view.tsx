@@ -29,9 +29,17 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
 
   return (
     <div
-      className="office-container relative mx-auto overflow-hidden rounded-xl"
-      style={{ width: WIDTH, height: HEIGHT, minHeight: 448 }}
+      className="office-container relative h-full w-full overflow-hidden"
     >
+      {/* Inner scaled container — maintains pixel grid, scales to fit */}
+      <div
+        className="absolute inset-0 origin-top-left"
+        style={{
+          width: WIDTH,
+          height: HEIGHT,
+          transform: `scale(var(--office-scale, 1))`,
+        }}
+      >
       {/* Floor: warm parquet with grid */}
       <div
         className="absolute inset-0"
@@ -195,6 +203,33 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
           col={config.meetingRooms[0].col + 2}
         />
       )}
+      </div>
+      {/* Scale script — fits the pixel grid into the container */}
+      <ScaleToFit pixelWidth={WIDTH} pixelHeight={HEIGHT} />
     </div>
+  );
+}
+
+/** Measures the container and sets --office-scale so the pixel grid fits. */
+function ScaleToFit({ pixelWidth, pixelHeight }: { pixelWidth: number; pixelHeight: number }) {
+  if (typeof window === "undefined") return null;
+
+  return (
+    <script
+      dangerouslySetInnerHTML={{
+        __html: `(function(){
+          var el = document.querySelector('.office-container');
+          if (!el) return;
+          function fit() {
+            var cw = el.clientWidth, ch = el.clientHeight;
+            if (!cw || !ch) return;
+            var s = Math.min(cw / ${pixelWidth}, ch / ${pixelHeight});
+            el.style.setProperty('--office-scale', s.toFixed(4));
+          }
+          fit();
+          new ResizeObserver(fit).observe(el);
+        })()`,
+      }}
+    />
   );
 }

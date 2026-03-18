@@ -1,9 +1,12 @@
+"use client";
+
+import { useState } from "react";
 import type { ApprovalGate, TeamProposal, TaskCard } from "@/lib/types";
 
 interface ApprovalGateCardProps {
   gate: ApprovalGate;
   isBusy: boolean;
-  onApprove: () => void;
+  onApprove: (feedback?: string) => void;
   teamProposal?: TeamProposal;
   tasks?: TaskCard[];
 }
@@ -17,6 +20,8 @@ export function ApprovalGateCard({
 }: ApprovalGateCardProps) {
   const isPending = gate.status === "pending";
   const isApproved = gate.status === "approved";
+  const [feedback, setFeedback] = useState("");
+  const [showFeedback, setShowFeedback] = useState(false);
 
   const bgClass = isPending
     ? "bg-[var(--pending-bg)] border-[var(--pending)]"
@@ -46,8 +51,9 @@ export function ApprovalGateCard({
         </p>
       )}
 
+      {/* Team proposal details */}
       {isPending && gate.gateType === "team_proposal" && teamProposal && (
-        <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3">
+        <div className="mt-3 max-h-[300px] space-y-2 overflow-y-auto border-t border-[var(--border)] pt-3">
           <p className="text-xs font-medium text-[var(--text-secondary)]">
             Proposed team: {teamProposal.name}
           </p>
@@ -62,32 +68,83 @@ export function ApprovalGateCard({
         </div>
       )}
 
-      {isPending && gate.gateType === "execution_plan" && tasks && tasks.length > 0 && (
-        <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3">
+      {/* Execution plan details */}
+      {isPending && gate.gateType === "execution_plan" && (
+        <div className="mt-3 max-h-[300px] space-y-2 overflow-y-auto border-t border-[var(--border)] pt-3">
           <p className="text-xs font-medium text-[var(--text-secondary)]">
-            Task board
+            Task board — {tasks?.length ?? 0} tasks
           </p>
-          {tasks.map((task) => (
-            <div key={task.id} className="rounded-lg bg-white/60 p-2">
-              <p className="text-xs font-medium">{task.title}</p>
-              <p className="text-[10px] text-[var(--text-secondary)]">
-                {task.workType} — {task.description}
-              </p>
-            </div>
-          ))}
+          {tasks && tasks.length > 0 ? (
+            tasks.map((task) => (
+              <div key={task.id} className="rounded-lg bg-white/60 p-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded bg-[var(--background)] px-1 py-0.5 text-[9px] font-medium text-[var(--text-secondary)]">
+                    {task.workType}
+                  </span>
+                  <p className="text-xs font-medium">{task.title}</p>
+                </div>
+                <p className="mt-0.5 text-[10px] text-[var(--text-secondary)]">
+                  {task.description}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="text-[10px] text-[var(--text-muted)]">
+              Task board will be generated after approval.
+            </p>
+          )}
         </div>
       )}
 
+      {/* Action area */}
       {isPending && (
-        <div className="mt-3 flex gap-2">
-          <button
-            type="button"
-            onClick={onApprove}
-            disabled={isBusy}
-            className="rounded-lg bg-[var(--success)] px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-50"
-          >
-            {isBusy ? "..." : "Validate"}
-          </button>
+        <div className="mt-3 space-y-2 border-t border-[var(--border)] pt-3">
+          {/* Feedback input */}
+          {showFeedback ? (
+            <div className="space-y-2">
+              <textarea
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                placeholder="Add notes, adjustments, or concerns..."
+                className="w-full rounded-lg border border-[var(--border)] bg-white px-2.5 py-2 text-xs leading-relaxed text-[var(--foreground)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--success)]"
+                rows={3}
+              />
+              <p className="text-[10px] text-[var(--text-muted)]">
+                Your feedback will be attached to this approval. In v3, the team will adapt based on your notes.
+              </p>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowFeedback(true)}
+              className="text-[11px] text-[var(--text-secondary)] underline decoration-dotted transition hover:text-[var(--foreground)]"
+            >
+              Add feedback or adjustments...
+            </button>
+          )}
+
+          {/* Buttons */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onApprove(feedback || undefined)}
+              disabled={isBusy}
+              className="flex-1 rounded-lg bg-[var(--success)] px-3 py-2 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+            >
+              {isBusy ? "..." : feedback ? "Validate with notes" : "Validate"}
+            </button>
+            <button
+              type="button"
+              disabled
+              className="rounded-lg border border-[var(--border)] bg-white px-3 py-2 text-xs font-medium text-[var(--text-muted)] transition disabled:cursor-not-allowed disabled:opacity-50"
+              title="Reject and regenerate — coming in v3"
+            >
+              Reject
+            </button>
+          </div>
+          <p className="text-center text-[9px] text-[var(--text-muted)]">
+            Reject &amp; regenerate coming in v3
+          </p>
         </div>
       )}
     </div>
