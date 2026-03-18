@@ -81,6 +81,8 @@ export async function createAgent(
     role: string;
     title: string;
     systemPrompt: string;
+    adapterType?: string;
+    adapterConfig?: Record<string, unknown>;
   },
 ): Promise<{ id: string }> {
   return paperclipFetch(`/api/companies/${companyId}/agents`, {
@@ -90,10 +92,73 @@ export async function createAgent(
       role: agent.role,
       title: agent.title,
       jobDescription: agent.systemPrompt,
-      adapterType: "http",
-      adapterConfig: {},
+      adapterType: agent.adapterType ?? "process",
+      adapterConfig: agent.adapterConfig ?? {},
     }),
   });
+}
+
+// ─── Provider → Paperclip adapter mapping ───
+
+const PROVIDER_ADAPTER_MAP: Record<string, {
+  adapterType: string;
+  envKeyName: string;
+  modelEnvName?: string;
+  defaultModel: string;
+}> = {
+  openai: {
+    adapterType: "process",
+    envKeyName: "OPENAI_API_KEY",
+    modelEnvName: "OPENAI_MODEL",
+    defaultModel: "gpt-4.1-mini",
+  },
+  anthropic: {
+    adapterType: "claude_local",
+    envKeyName: "ANTHROPIC_API_KEY",
+    modelEnvName: "ANTHROPIC_MODEL",
+    defaultModel: "claude-sonnet-4-6",
+  },
+  gemini: {
+    adapterType: "process",
+    envKeyName: "GEMINI_API_KEY",
+    modelEnvName: "GEMINI_MODEL",
+    defaultModel: "gemini-2.5-flash",
+  },
+  ollama: {
+    adapterType: "process",
+    envKeyName: "OLLAMA_BASE_URL",
+    modelEnvName: "OLLAMA_MODEL",
+    defaultModel: "llama3.1",
+  },
+};
+
+export function getAdapterConfigForProvider(providerId: string): {
+  adapterType: string;
+  adapterConfig: Record<string, unknown>;
+  envVars: Record<string, string>;
+} {
+  const mapping = PROVIDER_ADAPTER_MAP[providerId];
+  if (!mapping) {
+    return { adapterType: "process", adapterConfig: {}, envVars: {} };
+  }
+
+  const apiKey = process.env[mapping.envKeyName];
+  const model = process.env[mapping.modelEnvName ?? ""] ?? mapping.defaultModel;
+
+  const envVars: Record<string, string> = {};
+  if (apiKey) envVars[mapping.envKeyName] = apiKey;
+  if (model) envVars[mapping.modelEnvName ?? `${providerId.toUpperCase()}_MODEL`] = model;
+
+  return {
+    adapterType: mapping.adapterType,
+    adapterConfig: {
+      model,
+      env: Object.fromEntries(
+        Object.entries(envVars).map(([k, v]) => [k, v]),
+      ),
+    },
+    envVars,
+  };
 }
 
 // ─── Issues (Tasks) ───

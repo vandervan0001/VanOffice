@@ -22,6 +22,7 @@ import {
   createGoal,
   setSecret,
   pollActivity,
+  getAdapterConfigForProvider,
   type PaperclipActivity,
   type PaperclipMapping,
 } from "@/lib/runtime/adapters/paperclip";
@@ -133,13 +134,20 @@ export async function executePaperclipWorkspace(workspaceId: string): Promise<vo
     }
   }
 
-  // 3. Create agents
+  // 3. Create agents with proper LLM adapter configuration
+  const adapterCfg = getAdapterConfigForProvider(snapshot.workspace.providerId);
+
   for (const agent of snapshot.agents) {
     const pcAgent = await createAgent(company.id, {
       name: agent.displayName,
       role: agent.roleId,
       title: agent.title,
       systemPrompt: agent.systemPrompt,
+      adapterType: adapterCfg.adapterType,
+      adapterConfig: {
+        ...adapterCfg.adapterConfig,
+        promptTemplate: agent.systemPrompt,
+      },
     });
     mapping.agentMap.set(agent.agentId, pcAgent.id);
   }

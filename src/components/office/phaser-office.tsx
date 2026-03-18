@@ -650,7 +650,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
 
           const zoomX = cw / this.worldW;
           const zoomY = ch / this.worldH;
-          const zoom = Math.max(zoomX, zoomY);
+          const zoom = Math.min(zoomX, zoomY);
 
           cam.setZoom(zoom);
           cam.centerOn(this.worldW / 2, this.worldH / 2);
