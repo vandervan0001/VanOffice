@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { WorkspaceSnapshot } from "@/lib/types";
 import { agentGridPosition, generateOfficeConfig } from "@/lib/state/office-layout";
@@ -23,22 +23,42 @@ const AGENT_COLORS = [
 export function OfficeView({ snapshot }: OfficeViewProps) {
   const teamSize = snapshot?.agents.length ?? 0;
   const config = useMemo(() => generateOfficeConfig(Math.max(teamSize, 4)), [teamSize]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
 
   const WIDTH = config.cols * CELL;
   const HEIGHT = config.rows * CELL;
 
+  // Auto-scale the pixel grid to fit the container
+  useEffect(() => {
+    const container = containerRef.current;
+    const inner = innerRef.current;
+    if (!container || !inner) return;
+
+    function fit() {
+      const cw = container!.clientWidth;
+      const ch = container!.clientHeight;
+      if (!cw || !ch) return;
+      const scale = Math.min(cw / WIDTH, ch / HEIGHT);
+      inner!.style.transform = `scale(${scale})`;
+    }
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [WIDTH, HEIGHT]);
+
   return (
     <div
+      ref={containerRef}
       className="office-container relative h-full w-full overflow-hidden"
     >
       {/* Inner scaled container — maintains pixel grid, scales to fit */}
       <div
-        className="absolute inset-0 origin-top-left"
-        style={{
-          width: WIDTH,
-          height: HEIGHT,
-          transform: `scale(var(--office-scale, 1))`,
-        }}
+        ref={innerRef}
+        className="origin-top-left"
+        style={{ width: WIDTH, height: HEIGHT }}
       >
       {/* Floor: warm parquet with grid */}
       <div
@@ -204,32 +224,6 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
         />
       )}
       </div>
-      {/* Scale script — fits the pixel grid into the container */}
-      <ScaleToFit pixelWidth={WIDTH} pixelHeight={HEIGHT} />
     </div>
-  );
-}
-
-/** Measures the container and sets --office-scale so the pixel grid fits. */
-function ScaleToFit({ pixelWidth, pixelHeight }: { pixelWidth: number; pixelHeight: number }) {
-  if (typeof window === "undefined") return null;
-
-  return (
-    <script
-      dangerouslySetInnerHTML={{
-        __html: `(function(){
-          var el = document.querySelector('.office-container');
-          if (!el) return;
-          function fit() {
-            var cw = el.clientWidth, ch = el.clientHeight;
-            if (!cw || !ch) return;
-            var s = Math.min(cw / ${pixelWidth}, ch / ${pixelHeight});
-            el.style.setProperty('--office-scale', s.toFixed(4));
-          }
-          fit();
-          new ResizeObserver(fit).observe(el);
-        })()`,
-      }}
-    />
   );
 }
