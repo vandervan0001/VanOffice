@@ -178,6 +178,142 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     ],
   },
 
+  // --- Advisory & Board ---
+  {
+    roleId: "cfo-advisor",
+    title: "CFO Advisor",
+    purpose: "Provide financial oversight, risk assessment, and fiscal strategy.",
+    skills: ["financial strategy", "risk management", "board preparation"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["financial-memo", "risk-assessment"],
+    promptFragments: ["Always quantify risk. A risk without a probability and impact is just a worry."],
+  },
+  {
+    roleId: "legal-counsel",
+    title: "Legal Counsel",
+    purpose: "Review legal implications, compliance risks, and contractual obligations.",
+    skills: ["legal review", "compliance", "contract analysis"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["legal-memo", "compliance-checklist"],
+    promptFragments: ["Flag risks early. A legal problem caught at planning is cheap; caught at launch is catastrophic."],
+  },
+  {
+    roleId: "growth-advisor",
+    title: "Growth Advisor",
+    purpose: "Identify growth levers, optimize funnels, and propose scaling strategies.",
+    skills: ["growth strategy", "funnel optimization", "metrics analysis"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["growth-plan", "funnel-analysis"],
+    promptFragments: ["Growth without retention is a leaky bucket. Always check the bottom of the funnel first."],
+  },
+  {
+    roleId: "industry-expert",
+    title: "Industry Expert",
+    purpose: "Provide deep domain knowledge and industry-specific insights.",
+    skills: ["domain expertise", "trend analysis", "network mapping"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["industry-brief", "trend-report"],
+    promptFragments: ["Context is king. An insight without industry context is just an opinion."],
+  },
+
+  // --- Sales & Prospection ---
+  {
+    roleId: "sales-director",
+    title: "Sales Director",
+    purpose: "Design sales strategy, define ICP, and structure the sales process.",
+    skills: ["sales strategy", "ICP definition", "pipeline design"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["sales-strategy", "icp-definition"],
+    promptFragments: ["Every sales strategy starts with who you're selling to, not what you're selling."],
+  },
+  {
+    roleId: "sdr-lead",
+    title: "SDR Lead",
+    purpose: "Build outbound sequences, messaging templates, and prospection playbooks.",
+    skills: ["outbound prospection", "cold outreach", "sequence design"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["outbound-sequence", "email-templates", "prospection-playbook"],
+    promptFragments: ["A cold email has 3 seconds to earn a reply. Lead with the prospect's pain, not your pitch."],
+  },
+  {
+    roleId: "account-executive",
+    title: "Account Executive",
+    purpose: "Structure deal flow, objection handling, and closing strategies.",
+    skills: ["deal structuring", "objection handling", "negotiation"],
+    allowedTools: ["brief-reader"],
+    deliverableTypes: ["pitch-brief", "objection-handler", "deal-playbook"],
+    promptFragments: ["The best close is when the prospect sells themselves. Build the path, don't push."],
+  },
+  {
+    roleId: "sales-ops",
+    title: "Sales Ops",
+    purpose: "Design CRM workflows, reporting dashboards, and sales enablement materials.",
+    skills: ["CRM design", "reporting", "sales enablement"],
+    allowedTools: ["brief-reader"],
+    deliverableTypes: ["crm-workflow", "sales-dashboard", "enablement-doc"],
+    promptFragments: ["If it's not in the CRM, it didn't happen. Design processes that are easy to follow."],
+  },
+
+  // --- Tech Strategy ---
+  {
+    roleId: "cto-advisor",
+    title: "CTO Advisor",
+    purpose: "Evaluate tech stack, architecture decisions, and technical debt.",
+    skills: ["architecture review", "tech evaluation", "technical debt"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["tech-review", "architecture-reco"],
+    promptFragments: ["The best architecture is the one your team can maintain. Don't over-engineer."],
+  },
+  {
+    roleId: "security-auditor",
+    title: "Security Auditor",
+    purpose: "Assess security posture, identify vulnerabilities, and recommend hardening.",
+    skills: ["security assessment", "vulnerability analysis", "compliance"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["security-audit", "hardening-plan"],
+    promptFragments: ["Security is not a feature, it's a constraint. Every decision should pass the 'what if this leaks' test."],
+  },
+
+  // --- Social Media & SEO ---
+  {
+    roleId: "social-media-manager",
+    title: "Social Media Manager",
+    purpose: "Plan social media presence, content calendars, and engagement strategies.",
+    skills: ["social media strategy", "content planning", "community management"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["social-calendar", "engagement-strategy"],
+    promptFragments: ["Post for conversations, not impressions. One engaged follower beats a thousand scrollers."],
+  },
+  {
+    roleId: "seo-specialist",
+    title: "SEO Specialist",
+    purpose: "Optimize content for search, keyword strategy, and organic growth.",
+    skills: ["keyword research", "on-page SEO", "content optimization"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["keyword-strategy", "seo-audit"],
+    promptFragments: ["Write for humans first, search engines second. But structure for both."],
+  },
+
+  // --- Pricing & Product ---
+  {
+    roleId: "pricing-analyst",
+    title: "Pricing Analyst",
+    purpose: "Analyze pricing models, competitive pricing, and willingness-to-pay.",
+    skills: ["pricing strategy", "competitive pricing", "value analysis"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["pricing-analysis", "pricing-model"],
+    promptFragments: ["Price communicates value. If you compete on price alone, you've already lost."],
+  },
+  {
+    roleId: "product-analyst",
+    title: "Product Analyst",
+    purpose: "Analyze product-market fit, feature prioritization, and user feedback.",
+    skills: ["product analysis", "feature prioritization", "PMF assessment"],
+    allowedTools: ["brief-reader", "web-research"],
+    deliverableTypes: ["product-analysis", "feature-roadmap"],
+    promptFragments: ["Ship the minimum that teaches you the most. Features are hypotheses until users prove them."],
+  },
+
   // --- Events & Logistics ---
   {
     roleId: "event-planner",

@@ -85,6 +85,30 @@ const ROLE_TRIGGERS: Array<{ keywords: string[]; roleId: string }> = [
 
   // Events
   { keywords: ["event", "conference", "meetup", "launch event", "webinar", "workshop"], roleId: "event-planner" },
+
+  // Advisory
+  { keywords: ["advisor", "advisory", "board", "governance", "oversight", "counsel"], roleId: "cfo-advisor" },
+  { keywords: ["legal", "compliance", "gdpr", "terms", "contract", "regulation", "ip", "patent"], roleId: "legal-counsel" },
+  { keywords: ["growth", "scale", "funnel", "acquisition", "retention", "churn"], roleId: "growth-advisor" },
+  { keywords: ["industry", "domain", "sector", "vertical", "market trend"], roleId: "industry-expert" },
+
+  // Sales
+  { keywords: ["sales", "selling", "revenue", "deal", "close", "pipeline", "prospection", "prospect"], roleId: "sales-director" },
+  { keywords: ["outbound", "cold", "sdr", "sequence", "prospection", "prospect", "lead gen"], roleId: "sdr-lead" },
+  { keywords: ["account", "deal", "closing", "negotiation", "pitch", "demo"], roleId: "account-executive" },
+  { keywords: ["crm", "sales ops", "enablement", "reporting", "dashboard"], roleId: "sales-ops" },
+
+  // Tech
+  { keywords: ["tech", "technology", "stack", "architecture", "infrastructure", "devops", "cloud"], roleId: "cto-advisor" },
+  { keywords: ["security", "audit", "vulnerability", "penetration", "hardening", "cyber"], roleId: "security-auditor" },
+
+  // Social & SEO
+  { keywords: ["social media", "social", "instagram", "linkedin", "twitter", "tiktok", "community"], roleId: "social-media-manager" },
+  { keywords: ["seo", "search engine", "keyword", "organic", "backlink", "ranking"], roleId: "seo-specialist" },
+
+  // Product & Pricing
+  { keywords: ["pricing", "price", "monetization", "willingness to pay", "subscription", "freemium"], roleId: "pricing-analyst" },
+  { keywords: ["product", "feature", "roadmap", "pmf", "product-market fit", "user feedback"], roleId: "product-analyst" },
 ];
 
 function deriveRoleIds(brief: string, outputExpectations: string): string[] {
@@ -194,6 +218,20 @@ const ROLE_WORK_PHASES: Record<string, { phase: number; workType: TaskCard["work
   "financial-analyst": { phase: 2, workType: "writing", taskTitle: "Prepare financial analysis", taskDesc: "Analyze budgets, forecasts, and financial metrics." },
   "event-planner": { phase: 2, workType: "planning", taskTitle: "Plan event logistics and run-of-show", taskDesc: "Organize venue, timeline, promotion, and logistics." },
   "editor-reviewer": { phase: 3, workType: "writing", taskTitle: "Review the packet and prepare final deliverables", taskDesc: "Edit the artifacts into a clean final packet with explicit review notes." },
+  "cfo-advisor": { phase: 1, workType: "researching", taskTitle: "Assess financial risks and fiscal position", taskDesc: "Review financial data, identify risks, and prepare fiscal recommendations." },
+  "legal-counsel": { phase: 1, workType: "researching", taskTitle: "Review legal and compliance implications", taskDesc: "Identify legal risks, compliance gaps, and contractual concerns." },
+  "growth-advisor": { phase: 2, workType: "writing", taskTitle: "Design growth strategy and funnel optimization", taskDesc: "Identify growth levers and propose scaling strategies." },
+  "industry-expert": { phase: 1, workType: "researching", taskTitle: "Provide industry context and trend analysis", taskDesc: "Share domain expertise and map relevant industry trends." },
+  "sales-director": { phase: 2, workType: "planning", taskTitle: "Design sales strategy and define ICP", taskDesc: "Structure the sales process and define ideal customer profile." },
+  "sdr-lead": { phase: 2, workType: "writing", taskTitle: "Build outbound sequences and templates", taskDesc: "Create prospection playbooks, email sequences, and outreach scripts." },
+  "account-executive": { phase: 2, workType: "writing", taskTitle: "Structure deal flow and objection handling", taskDesc: "Build pitch framework, objection handlers, and closing strategies." },
+  "sales-ops": { phase: 2, workType: "writing", taskTitle: "Design CRM workflow and reporting", taskDesc: "Structure CRM processes, dashboards, and sales enablement materials." },
+  "cto-advisor": { phase: 1, workType: "researching", taskTitle: "Evaluate tech stack and architecture", taskDesc: "Review current technology decisions and recommend improvements." },
+  "security-auditor": { phase: 1, workType: "researching", taskTitle: "Assess security posture and vulnerabilities", taskDesc: "Identify security risks and recommend hardening measures." },
+  "social-media-manager": { phase: 2, workType: "writing", taskTitle: "Plan social media strategy and calendar", taskDesc: "Design social media presence with content calendar and engagement plan." },
+  "seo-specialist": { phase: 2, workType: "writing", taskTitle: "Build SEO and keyword strategy", taskDesc: "Optimize content strategy for search with keyword research and on-page plan." },
+  "pricing-analyst": { phase: 1, workType: "researching", taskTitle: "Analyze pricing models and competition", taskDesc: "Research competitive pricing and model willingness-to-pay." },
+  "product-analyst": { phase: 1, workType: "researching", taskTitle: "Analyze product-market fit and features", taskDesc: "Assess current product position and prioritize feature opportunities." },
 };
 
 function buildTaskBoard(teamProposal: TeamProposal): TaskCard[] {
