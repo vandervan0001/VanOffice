@@ -1,8 +1,24 @@
 import { NextResponse } from "next/server";
 
+import { listAllWorkspaces } from "@/lib/db/client";
 import { createWorkspaceFromMission } from "@/lib/runtime/engine";
 
 export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const workspaces = await listAllWorkspaces();
+    return NextResponse.json({ workspaces });
+  } catch (cause) {
+    return NextResponse.json(
+      {
+        error:
+          cause instanceof Error ? cause.message : "Unable to list workspaces.",
+      },
+      { status: 500 },
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {

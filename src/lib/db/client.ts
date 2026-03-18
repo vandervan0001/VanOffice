@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { nanoid } from "nanoid";
 
@@ -219,4 +219,65 @@ export async function findWorkspaceEvent<T extends RunEventType>(
     createdAt: row.createdAt,
     payload: JSON.parse(row.payloadJson) as RunEventPayloadMap[T],
   };
+}
+
+export interface WorkspaceSummary {
+  id: string;
+  title: string;
+  providerId: string;
+  status: WorkspaceStatus;
+  createdAt: number;
+  updatedAt: number;
+  missionGoal: string | null;
+  teamSize: number;
+}
+
+export async function listAllWorkspaces(): Promise<WorkspaceSummary[]> {
+  const db = getDb();
+
+  const rows = db
+    .select()
+    .from(workspacesTable)
+    .orderBy(desc(workspacesTable.updatedAt))
+    .all();
+
+  if (rows.length === 0) return [];
+
+  const workspaceIds = rows.map((r) => r.id);
+
+  // Fetch brief.ingested and team.proposed events for all workspaces
+  const eventRows = db
+    .select()
+    .from(runEventsTable)
+    .where(
+      and(
+        inArray(runEventsTable.workspaceId, workspaceIds),
+        inArray(runEventsTable.type, ["brief.ingested", "team.proposed"]),
+      ),
+    )
+    .all();
+
+  // Build lookup maps
+  const missionGoals = new Map<string, string>();
+  const teamSizes = new Map<string, number>();
+
+  for (const ev of eventRows) {
+    const payload = JSON.parse(ev.payloadJson);
+    if (ev.type === "brief.ingested") {
+      missionGoals.set(ev.workspaceId, payload.missionGoal ?? "");
+    } else if (ev.type === "team.proposed") {
+      teamSizes.set(ev.workspaceId, payload.teamProposal?.roles?.length ?? 0);
+    }
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    providerId: row.providerId,
+    status: row.status as WorkspaceStatus,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    missionGoal: missionGoals.get(row.id) ?? null,
+    teamSize: teamSizes.get(row.id) ?? 0,
+  }));
 }

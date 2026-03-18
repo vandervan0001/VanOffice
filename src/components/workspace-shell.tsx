@@ -7,7 +7,7 @@ import { MissionComposer } from "@/components/composer/mission-composer";
 import { ApprovalSidebar } from "@/components/sidebar/approval-sidebar";
 import { ArtifactPanel } from "@/components/outputs/artifact-panel";
 import { CommandInput } from "@/components/sidebar/command-input";
-import type { ProviderAdapter, WorkspaceSnapshot } from "@/lib/types";
+import type { ProviderAdapter, WorkspaceSnapshot, WorkspaceStatus } from "@/lib/types";
 
 const PhaserOffice = dynamic(
   () =>
@@ -23,6 +23,17 @@ const PhaserOffice = dynamic(
     ),
   },
 );
+
+interface RecentWorkspaceSummary {
+  id: string;
+  title: string;
+  providerId: string;
+  status: WorkspaceStatus;
+  createdAt: number;
+  updatedAt: number;
+  missionGoal: string | null;
+  teamSize: number;
+}
 
 interface WorkspaceShellProps {
   providers: Array<Pick<ProviderAdapter, "id" | "label"> & { configured: boolean }>;
@@ -65,6 +76,7 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
   const [busyGate, setBusyGate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paperclipStatus, setPaperclipStatus] = useState<"checking" | "online" | "offline">("checking");
+  const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspaceSummary[]>([]);
 
   const workspaceId = workspace?.workspace.id;
   const suggestions = deriveSuggestions(workspace);
@@ -85,6 +97,21 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     const interval = setInterval(checkPaperclip, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Fetch recent workspaces when on composer screen
+  useEffect(() => {
+    if (workspace) return;
+    async function loadRecent() {
+      try {
+        const res = await fetch("/api/workspaces");
+        const data = await res.json() as { workspaces: RecentWorkspaceSummary[] };
+        setRecentWorkspaces(data.workspaces ?? []);
+      } catch {
+        // Silently fail — not critical
+      }
+    }
+    loadRecent();
+  }, [workspace]);
 
   useEffect(() => {
     const id = new URL(window.location.href).searchParams.get("workspace");
@@ -144,13 +171,22 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     setError(null);
   }
 
+  function handleResume(id: string) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("workspace", id);
+    window.history.replaceState({}, "", url);
+    fetchSnapshot(id)
+      .then(setWorkspace)
+      .catch((e) => setError(e instanceof Error ? e.message : "Load failed"));
+  }
+
   // Status banner — no blocking Paperclip warnings, just provider info
   const paperclipBanner = paperclipStatus === "online" ? (
     <div className="mx-auto mb-3 max-w-[1600px]">
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)]">
+      <a href="http://localhost:3100/COM/dashboard" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)] transition hover:bg-[var(--success)]/10">
         <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
-        Paperclip connected
-      </span>
+        Paperclip connected ↗
+      </a>
     </div>
   ) : null;
 
@@ -171,6 +207,51 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
             </p>
           </div>
         )}
+        {recentWorkspaces.length > 0 && (
+          <div className="mx-auto mt-8 max-w-xl">
+            <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+              Recent workspaces
+            </h3>
+            <div className="space-y-2">
+              {recentWorkspaces.slice(0, 10).map((ws) => (
+                <button
+                  key={ws.id}
+                  type="button"
+                  onClick={() => handleResume(ws.id)}
+                  className="flex w-full items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-left transition hover:border-[var(--foreground)]/20 hover:shadow-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-[var(--foreground)]">
+                      {ws.missionGoal || ws.title || "Untitled workspace"}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                      {ws.teamSize > 0 ? `${ws.teamSize} agents` : "No team yet"}
+                      {" · "}
+                      {new Date(ws.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      ws.status === "running"
+                        ? "bg-[var(--success-bg)] text-[var(--success)]"
+                        : ws.status === "complete"
+                          ? "bg-[var(--foreground)]/5 text-[var(--text-muted)]"
+                          : "bg-[var(--attention-bg)] text-[var(--attention)]"
+                    }`}
+                  >
+                    {ws.status === "running"
+                      ? "Running"
+                      : ws.status === "complete"
+                        ? "Completed"
+                        : ws.status === "drafting"
+                          ? "Draft"
+                          : ws.status.replace(/_/g, " ")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
     );
   }
@@ -180,18 +261,21 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     <main className="h-screen bg-[var(--background)] p-4">
       {/* Top bar: New team + Paperclip status */}
       <div className="mx-auto mb-2 flex max-w-[1600px] items-center justify-between">
-        <button
-          type="button"
-          onClick={handleNewTeam}
-          className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-secondary)] transition hover:border-[var(--foreground)]/30 hover:text-[var(--foreground)]"
-        >
-          ← New team
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleNewTeam}
+            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-secondary)] transition hover:border-[var(--foreground)]/30 hover:text-[var(--foreground)]"
+          >
+            ← New team
+          </button>
+          <span className="text-[10px] text-[var(--text-muted)]">Auto-saved</span>
+        </div>
         {paperclipStatus === "online" && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)]">
+          <a href="http://localhost:3100/COM/dashboard" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)] transition hover:bg-[var(--success)]/10">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
-            Paperclip
-          </span>
+            Paperclip ↗
+          </a>
         )}
         {paperclipStatus === "offline" && workspace.workspace.providerId !== "mock" && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)]">
