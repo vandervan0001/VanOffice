@@ -8,7 +8,9 @@
     "build": "node ./node_modules/next/dist/bin/next build",
     "start": "node ./node_modules/next/dist/bin/next start",
     "lint": "node ./node_modules/eslint/bin/eslint.js .",
+    "pretest": "npm run clean:metadata",
     "test": "node ./node_modules/vitest/vitest.mjs run",
+    "pretest:watch": "npm run clean:metadata",
     "test:watch": "node ./node_modules/vitest/vitest.mjs",
     "clean:metadata": "find . -path './node_modules' -prune -o -name '._*' -delete",
     "clean:next": "rm -rf .next"

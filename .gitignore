@@ -36,6 +36,7 @@ yarn-error.log*
 
 # local deployment / tooling
 .vercel
+/.playwright-cli/
 
 # codex / local AI instructions and metadata
 .codex/
