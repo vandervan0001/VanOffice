@@ -110,7 +110,7 @@ export const anthropicProvider = remoteProvider(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.ANTHROPIC_MODEL ?? "claude-3-5-sonnet-latest",
+        model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6",
         max_tokens: 1200,
         system: input.system,
         messages: [{ role: "user", content: input.prompt }],
