@@ -108,6 +108,14 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
       .catch((e) => setError(e instanceof Error ? e.message : "Load failed"));
   }
 
+  function handleNewTeam() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("workspace");
+    window.history.replaceState({}, "", url);
+    setWorkspace(null);
+    setError(null);
+  }
+
   // Pre-workspace: empty office with composer overlay
   if (!workspace) {
     return (
@@ -125,14 +133,6 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         )}
       </main>
     );
-  }
-
-  function handleNewTeam() {
-    const url = new URL(window.location.href);
-    url.searchParams.delete("workspace");
-    window.history.replaceState({}, "", url);
-    setWorkspace(null);
-    setError(null);
   }
 
   // Active workspace: 50/50 layout with margins
