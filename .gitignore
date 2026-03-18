@@ -45,6 +45,12 @@ yarn-error.log*
 codex-instructions.md
 .codex-instructions*
 
+# superpowers brainstorm sessions
+.superpowers/
+
+# claude local config
+.claude/
+
 # macOS metadata
 .DS_Store
 ._*

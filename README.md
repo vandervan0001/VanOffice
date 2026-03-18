@@ -1,225 +1,248 @@
 # Team Foundry
 
-Team Foundry is a local-first web app to create an AI team from a mission brief, approve the plan, then watch real execution states in a pixel-office scene while structured artifacts are produced in parallel.
+> Create AI teams and watch them work in a pixel office.
 
-This repository is intentionally public-ready: reproducible setup, clear requirements, explicit runtime behavior, and a clean git hygiene baseline.
+Team Foundry is a local-first web app where you describe a mission in plain language, an AI proposes the right team, and you watch your agents work in real-time in a pixel-art office — GBA-style, warm and cozy.
 
-## Project status
+Drop a brief, approve the squad, and watch structured deliverables come together while your pixel employees move between their desks, hold meetings, research, and write.
 
-This is currently an experimental project and it is intentionally 100% vibe-coded at MVP stage.
+![MIT License](https://img.shields.io/badge/license-MIT-green)
+![Node](https://img.shields.io/badge/node-%3E%3D20-blue)
+![Status](https://img.shields.io/badge/status-experimental-orange)
 
-- It is usable for demos and rapid iteration.
-- It is not yet production hardened.
-- APIs, schemas, and runtime internals may change quickly between versions.
+---
 
-## Core capabilities (v1)
+## 100% Vibecoded
 
-- Mission flow: `brief -> parsed understanding -> team proposal -> approval -> execution -> final approval`
-- Truthful pixel-office UI backed by real task and agent states
-- Event-sourced runtime with replayable event timeline
-- Approval gates:
-  - `team_proposal`
-  - `execution_plan`
-  - `final_deliverables`
-- Structured artifact lifecycle:
-  - `draft`
-  - `needs_review`
-  - `approved`
-  - `superseded`
-- Provider adapters:
-  - `mock` (default, no API key needed)
-  - `openai`
-  - `anthropic`
-  - `gemini`
-  - `ollama`
+This entire project was vibecoded — designed, planned, and implemented through natural language conversations with AI. Every line of code, every pixel-art sprite, every component was generated through collaborative prompting. No manual coding involved.
 
-## Tech stack
+**The vibe stack:**
+- Brainstormed the concept and UI direction conversationally
+- Designed the architecture through Q&A and iterative refinement
+- Generated a formal spec, had it reviewed by AI, fixed issues
+- Wrote a detailed implementation plan with 13 tasks
+- Dispatched parallel AI agents to implement each task independently
+- Two-stage AI code review (spec compliance + quality) after each task
+- Visually verified the result through automated browser screenshots
 
-- `Next.js 16` + `React 19` + `TypeScript`
-- `PixiJS` for office rendering
-- `SQLite` (`better-sqlite3`) + `drizzle-orm` for persistence
-- `Vitest` for unit tests
+**Why this matters:** This is what building software looks like when you describe what you want and AI builds it. The entire v2 redesign (pixel-art office, warm theme, new layout, 13 new files, 20 tests) was completed in a single conversation.
 
-## Requirements
+---
 
-- `Node.js` >= 20 (tested with 25.x)
-- `npm` >= 10
-- Build toolchain for native modules (`better-sqlite3`):
-  - macOS: Xcode Command Line Tools
-  - Linux: `build-essential`, `python3`, `make`, `g++`
-  - Windows: Visual Studio Build Tools
+## What it does
+
+1. **You describe a mission** — "I need a marketing team to analyze our competition and build an action plan"
+2. **AI proposes a team** — Mission Planner, Research Lead, Strategy Lead, Editor Reviewer — with roles, skills, and rationale
+3. **You approve** — review the team, the task board, and the expected deliverables
+4. **Watch them work** — agents sit at their desks, hold meetings, research, write. State bubbles show what each agent is doing
+5. **Collect deliverables** — structured documents appear in the output panel as the team produces them
+
+## The pixel office
+
+The office is rendered in **GBA / RPG Maker 3/4 view** using pure HTML/CSS — no game engine, no WebGL. Agents are pixel-art characters with distinct appearances (hair, clothes, skin), and they move between zones based on real task states:
+
+- **At their desk** — idle, planning, writing, researching
+- **In the meeting room** — when 2+ agents need to collaborate
+- **State bubbles** — magnifying glass (research), pencil (writing), notepad (planning), clock (waiting), checkmark (done)
+
+The furniture is detailed: desks with monitors and coffee mugs, windows with curtains, a clock on the wall, a task board with colorful post-its, potted plants, and a coffee machine.
+
+---
 
 ## Quick start
 
 ```bash
+git clone https://github.com/vandervan0001/VanOffice.git
+cd VanOffice
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). Click "Try with an example" to see the demo flow.
 
-## Environment setup
+### Requirements
 
-The app runs without external providers using `mock` mode.
+- **Node.js** >= 20
+- **npm** >= 10
+- Native build tools for `better-sqlite3`:
+  - macOS: Xcode Command Line Tools (`xcode-select --install`)
+  - Linux: `build-essential python3 make g++`
+  - Windows: Visual Studio Build Tools
 
-To enable cloud/local providers, create `.env.local` and set one or more values:
+### Provider setup
+
+The app works out of the box with a **mock provider** (no API key needed) — perfect for testing the UI and flow.
+
+To use real AI providers, create `.env.local`:
 
 ```bash
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4.1-mini
+# Pick one or more:
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
 
-ANTHROPIC_API_KEY=
-ANTHROPIC_MODEL=claude-3-5-sonnet-latest
-
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
-
+# Or use a local model:
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=llama3.1
 ```
 
-Optional local storage override:
+See `.env.example` for all options.
 
-```bash
-TEAM_FOUNDRY_DATA_DIR=/absolute/path/to/data
-```
+---
 
-## How to test
+## Tech stack
 
-### Automated checks
-
-```bash
-npm run lint
-npm run test
-npm run build
-```
-
-Useful local maintenance commands:
-
-```bash
-npm run clean:metadata
-npm run clean:next
-```
-
-### Manual product test (end-to-end)
-
-1. Start dev server:
-
-```bash
-npm run dev
-```
-
-2. Open `http://localhost:3000`.
-3. Fill mission goal + brief text, optionally upload files, choose provider.
-4. Click `Propose the team`.
-5. In `Approvals`, click `Approve` for `team_proposal`.
-6. Review generated task board, then approve `execution_plan`.
-7. Watch agents move through states in the pixel office and observe artifacts updating.
-8. After `final_deliverables` gate appears, approve it and confirm run status becomes `complete`.
-9. Use the replay slider to scrub event history and verify deterministic state reconstruction.
+| Layer | Tech |
+|-------|------|
+| Framework | Next.js 16 + React 19 + TypeScript |
+| Rendering | Pure HTML/CSS pixel-art (no game engine) |
+| Database | SQLite (better-sqlite3) + Drizzle ORM |
+| Styling | Tailwind CSS 4 |
+| Testing | Vitest + Testing Library |
+| Architecture | Event-sourced runtime, SSE live updates |
 
 ## Project structure
 
-- `src/app/`: Next.js app router and API routes
-- `src/components/`: UI shell + mission composer + office renderer
-- `src/lib/runtime/`: orchestration engine, projector, scheduler, adapters
-- `src/lib/db/`: SQLite client and schema
-- `src/lib/types.ts`: normalized public domain interfaces
-- `tests/`: unit tests for state projection, provenance, and office mapping
+```
+src/
+  app/              # Next.js routes + API endpoints
+  components/
+    office/         # Pixel office: agents, furniture, meeting bubbles
+    composer/       # Mission brief form (overlay)
+    sidebar/        # Approval gates + command input
+    outputs/        # Artifact cards panel
+  lib/
+    runtime/        # Engine, projector, scheduler, adapters
+    db/             # SQLite schema + client
+    state/          # Office layout logic
+    types.ts        # All domain types
+tests/              # Unit + component tests
+public/sprites/     # SVG bubble icons
+```
 
-## Runtime data and persistence
+## How it works (architecture)
 
-- Local runtime data is stored in `.data/` (gitignored)
+**Event-sourced runtime** — every state change is an append-only event. The UI reconstructs state by replaying events, enabling deterministic behavior and future replay support.
+
+**Approval gates** — three mandatory human checkpoints:
+1. **Team proposal** — review agents, roles, and rationale before anything starts
+2. **Execution plan** — review the task board before agents begin work
+3. **Final deliverables** — review outputs before marking the run complete
+
+**Provider abstraction** — swap between OpenAI, Anthropic, Gemini, Ollama, or mock with a single config change. The runtime doesn't care which model powers the agents.
+
+**Truthful visualization** — agents only move when their actual task state changes. No fake ambient animation. What you see is what's happening.
+
+---
+
+## Testing
+
+```bash
+npm test          # Run all unit + component tests
+npm run lint      # ESLint
+npm run build     # Production build
+```
+
+### Manual E2E test
+
+1. `npm run dev` → open localhost:3000
+2. Click "Try with an example" → "Propose a team"
+3. Approve team → approve execution plan → watch agents work
+4. Approve final deliverables → run completes
+5. Check artifacts in the bottom panel
+
+---
+
+## Roadmap
+
+### v2 — Current (pixel office redesign)
+
+- [x] GBA 3/4 pixel-art office with HTML/CSS rendering
+- [x] Warm cream theme, clean UI
+- [x] L-shaped layout: office top, outputs bottom, sidebar right
+- [x] Pixel-art character sprites with unique appearances
+- [x] Detailed furniture SVGs (desks, monitors, plants, coffee machine, task board)
+- [x] State bubbles for agent activity
+- [x] Staggered agent entry animation
+- [x] Expandable approval gates with team/task details
+- [x] Artifact cards with status badges and markdown preview
+- [x] Responsive layout breakpoints
+
+### v3 — Web research & real agent tools
+
+- [ ] **Web research tool** — agents can search the web (Playwright, MCP, or API-based)
+- [ ] **Document analysis** — agents can read and summarize uploaded PDFs/docs in depth
+- [ ] **Citation system** — every claim in deliverables links back to its source
+- [ ] **Tool use visualization** — see in the office when an agent is browsing the web vs writing
+- [ ] **Real LLM execution** — connect to OpenAI/Claude/Gemini for actual AI-generated content (not mock)
+
+### v4 — Live interaction & collaboration
+
+- [ ] **Real-time chat** — give instructions to the team during execution
+- [ ] **Agent micro-management** — click an agent, see their task, redirect them
+- [ ] **Task reassignment** — drag tasks between agents on the task board
+- [ ] **Notification system** — agents flag when they need human input
+- [ ] **Meeting transcripts** — see what agents discussed in their meetings
+
+### v5 — Multi-team & persistence
+
+- [ ] **Multiple workspaces** — run several teams in parallel
+- [ ] **Run history** — browse past missions and replay them
+- [ ] **Template library** — pre-built team templates (marketing, research, strategy, content)
+- [ ] **Export** — download deliverables as PDF, DOCX, or markdown
+- [ ] **Replay mode** — scrub through a completed run like a timeline
+
+### Future vision
+
+- [ ] **LPC sprite packs** — swap in real RPG Maker-style character sprites
+- [ ] **Custom office layouts** — design your own office floorplan
+- [ ] **Agent personalities** — each agent has quirks and working styles
+- [ ] **Multi-user** — invite teammates to watch and interact with the same office
+- [ ] **Plugin system** — add custom tools (Slack, Jira, GitHub, etc.)
+- [ ] **MCP integration** — connect to any MCP-compatible tool server
+
+---
+
+## Contributing
+
+Contributions are welcome! This project is vibecoded and we'd love to keep that energy going.
+
+**Good first issues:**
+- Add more furniture types to the office
+- Improve character sprites (LPC spritesheet integration)
+- Add more role templates (designer, developer, analyst...)
+- Improve artifact rendering (better markdown styles)
+
+**Bigger contributions:**
+- Implement the web research tool adapter
+- Add Playwright-based browsing capability for agents
+- Build the real-time chat system (v4)
+- Add MCP tool server integration
+
+See the roadmap above for direction. Open an issue to discuss before starting major work.
+
+---
+
+## Local data
+
+Runtime data is stored in `.data/` (gitignored):
 - SQLite DB: `.data/team-foundry.db`
 - Uploaded files: `.data/uploads/<workspace-id>/`
 
-To reset local state:
-
-```bash
-rm -rf .data
-```
-
-## Roadmap and scaling plan
-
-### Current stage (MVP / experimental)
-
-- Single local workspace flow
-- Event-sourced run timeline
-- Basic adapter abstraction for providers and tools
-- Approval-gated execution loop
-
-### v1 stable (post-MVP hardening)
-
-- Contract freeze for core domain types (`MissionBrief`, `TeamProposal`, `TaskCard`, `Artifact`, `RunEvent`)
-- DB migrations and forward/backward compatibility policy
-- Retry policy and better error semantics for provider/tool adapters
-- SSE resilience (reconnect strategy, heartbeat handling, dead-connection cleanup)
-- Deterministic regression test pack for replay, approvals, and artifact provenance
-- Contributor docs (`CONTRIBUTING.md`, architecture decisions, adapter authoring guide)
-
-### v2 (scale architecture)
-
-- Multi-workspace concurrency in one runtime
-- Optional split between API process and worker process
-- Queue-backed execution mode (Redis/NATS) to decouple orchestration from UI
-- Pluggable storage strategy (SQLite local, Postgres server mode)
-- Provider budget controls (rate limit, token quotas, per-workspace guardrails)
-- Observability baseline (structured logs, tracing, run-level metrics)
-
-### v3+ (platform direction)
-
-- Multi-user collaboration and workspace permissions
-- Template marketplace for teams and missions
-- Optional plugin runtime for custom tools
-- Horizontal worker scaling for long-running missions
-- Managed cloud deployment profile while preserving local-first mode
-
-## Git hygiene (important)
-
-The repository ignores local-only files, including:
-
-- build outputs (`.next`, `out`, `build`)
-- local DB/runtime artifacts (`.data`, `*.db*`)
-- env secrets (`.env*`, with `.env.example` allowed)
-- Codex/local AI metadata (`.codex`, codex instruction files)
-- macOS metadata (`._*`, `.DS_Store`)
+To reset: `rm -rf .data`
 
 ## Troubleshooting
 
-- `database is locked` during builds:
-  - fixed in current runtime by lazy DB initialization and busy timeout
-  - if still seen, ensure no parallel process is writing the same DB file
-- `Failed to open database` on `npm run dev` (Turbopack cache issue on external drives):
-  - run `npm run clean:metadata`
-  - run `npm run clean:next`
-  - use default `npm run dev` (webpack mode)
-  - optional fast mode remains available via `npm run dev:turbo`
-- External drives creating `._*` metadata files:
-  - these are ignored by git and should not be committed
-  - if you need to clean them:
-
-```bash
-npm run clean:metadata
-```
-
-## Publish to GitHub
-
-If your folder is not yet a git repository:
-
-```bash
-git init
-git add .
-git commit -m "Initial Team Foundry v1"
-```
-
-Then create a GitHub repository and push:
-
-```bash
-git remote add origin <your-github-repo-url>
-git branch -M main
-git push -u origin main
-```
+| Problem | Fix |
+|---------|-----|
+| `database is locked` | Ensure no parallel process writes the same DB |
+| `Failed to open database` (Turbopack) | Run `npm run clean:next` then use `npm run dev` |
+| macOS `._*` metadata files | Run `npm run clean:metadata` |
 
 ## License
 
-MIT. See `LICENSE`.
+MIT — see [LICENSE](LICENSE).
+
+---
+
+**Built with vibes, not keystrokes.**

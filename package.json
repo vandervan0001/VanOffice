@@ -1,7 +1,22 @@
 {
   "name": "team-foundry",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.2.0",
+  "description": "Create AI teams and watch them work in a pixel office. 100% vibecoded.",
+  "author": "vandervan0001",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vandervan0001/VanOffice.git"
+  },
+  "keywords": [
+    "ai-agents",
+    "pixel-art",
+    "team-management",
+    "vibecoded",
+    "local-first",
+    "event-sourcing",
+    "next.js"
+  ],
   "scripts": {
     "dev": "node ./node_modules/next/dist/bin/next dev --webpack",
     "dev:turbo": "node ./node_modules/next/dist/bin/next dev",
