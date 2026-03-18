@@ -29,7 +29,7 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
   const WIDTH = config.cols * CELL;
   const HEIGHT = config.rows * CELL;
 
-  // Auto-scale the pixel grid to fit the container
+  // Auto-scale the pixel grid to FILL the container (cover, not fit)
   useEffect(() => {
     const container = containerRef.current;
     const inner = innerRef.current;
@@ -39,8 +39,14 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
       const cw = container!.clientWidth;
       const ch = container!.clientHeight;
       if (!cw || !ch) return;
-      const scale = Math.min(cw / WIDTH, ch / HEIGHT);
+      // Use max to FILL the container (cover), not min (fit)
+      const scale = Math.max(cw / WIDTH, ch / HEIGHT);
       inner!.style.transform = `scale(${scale})`;
+      // Center the scaled content
+      const scaledW = WIDTH * scale;
+      const scaledH = HEIGHT * scale;
+      inner!.style.left = `${(cw - scaledW) / 2}px`;
+      inner!.style.top = `${(ch - scaledH) / 2}px`;
     }
 
     fit();
@@ -53,11 +59,12 @@ export function OfficeView({ snapshot }: OfficeViewProps) {
     <div
       ref={containerRef}
       className="office-container relative h-full w-full overflow-hidden"
+      style={{ backgroundColor: "#e0c898" }}
     >
-      {/* Inner scaled container — maintains pixel grid, scales to fit */}
+      {/* Inner scaled container — fills the frame, centered */}
       <div
         ref={innerRef}
-        className="origin-top-left"
+        className="absolute origin-top-left"
         style={{ width: WIDTH, height: HEIGHT }}
       >
       {/* Floor: warm parquet with grid */}

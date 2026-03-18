@@ -154,7 +154,7 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         {/* LEFT COLUMN: office + deliverables */}
         <div className="flex flex-1 flex-col gap-4">
           {/* Office */}
-          <div className="flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[#e8d8c0]">
+          <div className="flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
             <OfficeView snapshot={workspace} />
           </div>
 
