@@ -18,9 +18,9 @@ export interface OfficeConfig {
 // Desk layout: 3 columns of desks, as many rows as needed
 function generateDesks(count: number): GridPosition[] {
   const desks: GridPosition[] = [];
-  const DESK_COLS = [3, 8, 13];
+  const DESK_COLS = [2, 8, 14];
   const FIRST_DESK_ROW = 4;
-  const ROW_SPACING = 3;
+  const ROW_SPACING = 5;
 
   for (let i = 0; i < count; i++) {
     const colIndex = i % DESK_COLS.length;

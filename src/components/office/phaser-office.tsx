@@ -44,7 +44,7 @@ const STATE_BUBBLE: Record<AgentState, { emoji: string; text: string } | null> =
 /*  Tile size used by Phaser (half the HTML office's 32 px)            */
 /* ------------------------------------------------------------------ */
 
-const TILE = 16;
+const TILE = 32;
 const NUM_CHARS = 6; // char_0 .. char_5
 
 const BUBBLE_DISPLAY_MS = 8000;
@@ -241,7 +241,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             try {
               this.add.image(dx + TILE * 0.7, dy + TILE * 0.35, 'laptop')
                 .setOrigin(0, 0)
-                .setScale(0.4);
+                .setScale(0.35);
             } catch { /* tile not loaded */ }
 
             // Monitor screen glow (colored rectangle over desk)
@@ -275,7 +275,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             try {
               this.add.image(rx + rw / 2, ry + 4, 'tv')
                 .setOrigin(0.5, 0)
-                .setScale(0.4);
+                .setScale(0.35);
             } catch { /* tile not loaded */ }
           }
 
@@ -296,7 +296,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             try {
               this.add.image(bx + TILE * 0.9, by + TILE * 0.6, 'coffee-maker')
                 .setOrigin(0.5, 0)
-                .setScale(0.45);
+                .setScale(0.5);
             } catch {
               // Fallback graphics
               g.fillStyle(0x6a4a3a);
@@ -307,14 +307,14 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             try {
               this.add.image(bx + TILE * 2, by + TILE * 0.8, 'coffee-cup')
                 .setOrigin(0.5, 0.5)
-                .setScale(0.4);
+                .setScale(0.35);
             } catch { /* tile not loaded */ }
 
             // Water cooler
             try {
               this.add.image(bx + TILE * 3, by + TILE * 0.5, 'water-cooler')
                 .setOrigin(0.5, 0)
-                .setScale(0.45);
+                .setScale(0.5);
             } catch { /* tile not loaded */ }
 
             // Couch (keep graphics — no specific LPC tile)
@@ -337,10 +337,10 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             const cmY = (cfg.breakRoom ? cfg.breakRoom.row : 10) * TILE + TILE * 0.5;
             this.add.image(cmX, cmY, 'copy-machine')
               .setOrigin(0, 0)
-              .setScale(0.45);
+              .setScale(0.5);
             this.add.image(cmX + TILE * 2.5, cmY + TILE * 0.3, 'bins')
               .setOrigin(0, 0)
-              .setScale(0.4);
+              .setScale(0.35);
           } catch { /* tiles not loaded */ }
 
           // --- Plants (green circles) ---
