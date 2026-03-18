@@ -38,6 +38,7 @@
     "get-proto": "^1.0.1",
     "nanoid": "^5.1.7",
     "next": "^16.1.7",
+    "phaser": "^3.90.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",

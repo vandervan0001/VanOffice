@@ -3,7 +3,17 @@ import { render, screen } from "@testing-library/react";
 
 import { WorkspaceShell } from "@/components/workspace-shell";
 
-// Mock child components to isolate shell layout testing
+// Mock next/dynamic to render the component synchronously in tests
+vi.mock("next/dynamic", () => ({
+  __esModule: true,
+  default: (loader: () => Promise<{ default: React.ComponentType }>) => {
+    // Return a placeholder component for tests — dynamic import won't resolve in jsdom
+    const Placeholder = () => <div data-testid="office-view">Office</div>;
+    Placeholder.displayName = "DynamicMock";
+    return Placeholder;
+  },
+}));
+// Keep the old mock in case anything else imports it
 vi.mock("@/components/office/office-view", () => ({
   OfficeView: () => <div data-testid="office-view">Office</div>,
 }));

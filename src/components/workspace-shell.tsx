@@ -2,12 +2,27 @@
 
 import { useEffect, useState } from "react";
 
-import { OfficeView } from "@/components/office/office-view";
+import dynamic from "next/dynamic";
 import { MissionComposer } from "@/components/composer/mission-composer";
 import { ApprovalSidebar } from "@/components/sidebar/approval-sidebar";
 import { ArtifactPanel } from "@/components/outputs/artifact-panel";
 import { CommandInput } from "@/components/sidebar/command-input";
 import type { ProviderAdapter, WorkspaceSnapshot } from "@/lib/types";
+
+const PhaserOffice = dynamic(
+  () =>
+    import("@/components/office/phaser-office").then((m) => ({
+      default: m.PhaserOffice,
+    })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+        Loading office...
+      </div>
+    ),
+  },
+);
 
 interface WorkspaceShellProps {
   providers: Array<Pick<ProviderAdapter, "id" | "label"> & { configured: boolean }>;
@@ -207,7 +222,7 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         {/* LEFT COLUMN: office + deliverables */}
         <div className="flex flex-1 flex-col gap-4">
           <div className="flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
-            <OfficeView snapshot={workspace} />
+            <PhaserOffice snapshot={workspace} />
           </div>
           <div className="shrink-0">
             <ArtifactPanel artifacts={workspace.artifacts} />
