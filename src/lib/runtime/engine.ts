@@ -11,7 +11,7 @@ import {
   listWorkspaceEvents,
   setWorkspaceStatus,
 } from "@/lib/db/client";
-import { SHARED_OPERATING_MANUAL, getRoleTemplate } from "@/lib/role-templates";
+import { SHARED_OPERATING_MANUAL, getRoleTemplate, ROLE_TEMPLATES } from "@/lib/role-templates";
 import { localToolAdapter } from "@/lib/runtime/adapters/tools";
 import { projectWorkspaceState } from "@/lib/runtime/projector";
 import { clearWorkspaceSchedule, scheduleWorkspaceExecution } from "@/lib/runtime/scheduler";
@@ -54,86 +54,10 @@ function buildAssumptions(input: CreateWorkspaceInput, fileContents: string[]) {
   return assumptions;
 }
 
-// Keyword → role mapping. Each entry adds a role when any keyword matches.
-const ROLE_TRIGGERS: Array<{ keywords: string[]; roleId: string }> = [
-  // Research & analysis
-  { keywords: ["research", "veille", "investigate", "study", "data", "evidence", "benchmark"], roleId: "research-lead" },
-  { keywords: ["data", "metrics", "kpi", "analytics", "numbers", "dashboard", "benchmark"], roleId: "data-analyst" },
-  { keywords: ["competitor", "competitive", "landscape", "positioning", "market map"], roleId: "competitive-analyst" },
-
-  // Strategy & planning
-  { keywords: ["strategy", "plan", "action", "roadmap", "priorities", "direction"], roleId: "strategy-lead" },
-  { keywords: ["project", "timeline", "milestone", "schedule", "coordination", "dependencies"], roleId: "project-manager" },
-
-  // Content & communication
-  { keywords: ["content", "blog", "editorial", "article", "seo", "writing", "copy"], roleId: "content-writer" },
-  { keywords: ["communication", "press", "pr", "messaging", "narrative", "investor", "stakeholder", "memo", "update"], roleId: "communications-lead" },
-
-  // Design & brand
-  { keywords: ["brand", "identity", "visual", "logo", "style guide", "tone"], roleId: "brand-strategist" },
-  { keywords: ["ux", "user research", "persona", "journey", "user experience", "interview"], roleId: "ux-researcher" },
-
-  // Marketing
-  { keywords: ["marketing", "campaign", "promotion", "go-to-market", "gtm", "channel", "launch"], roleId: "marketing-lead" },
-
-  // Operations & HR
-  { keywords: ["onboarding", "culture", "handbook", "policy", "hire", "employee", "team building"], roleId: "hr-specialist" },
-  { keywords: ["process", "operations", "workflow", "sop", "documentation", "procedure"], roleId: "operations-lead" },
-
-  // Finance
-  { keywords: ["budget", "financial", "forecast", "revenue", "cost", "pricing", "investment", "investor"], roleId: "financial-analyst" },
-
-  // Events
-  { keywords: ["event", "conference", "meetup", "launch event", "webinar", "workshop"], roleId: "event-planner" },
-
-  // Advisory
-  { keywords: ["advisor", "advisory", "board", "governance", "oversight", "counsel"], roleId: "cfo-advisor" },
-  { keywords: ["legal", "compliance", "gdpr", "terms", "contract", "regulation", "ip", "patent"], roleId: "legal-counsel" },
-  { keywords: ["growth", "scale", "funnel", "acquisition", "retention", "churn"], roleId: "growth-advisor" },
-  { keywords: ["industry", "domain", "sector", "vertical", "market trend"], roleId: "industry-expert" },
-
-  // Sales
-  { keywords: ["sales", "selling", "revenue", "deal", "close", "pipeline", "prospection", "prospect"], roleId: "sales-director" },
-  { keywords: ["outbound", "cold", "sdr", "sequence", "prospection", "prospect", "lead gen"], roleId: "sdr-lead" },
-  { keywords: ["account", "deal", "closing", "negotiation", "pitch", "demo"], roleId: "account-executive" },
-  { keywords: ["crm", "sales ops", "enablement", "reporting", "dashboard"], roleId: "sales-ops" },
-
-  // Tech
-  { keywords: ["tech", "technology", "stack", "architecture", "infrastructure", "devops", "cloud"], roleId: "cto-advisor" },
-  { keywords: ["security", "audit", "vulnerability", "penetration", "hardening", "cyber"], roleId: "security-auditor" },
-
-  // Social & SEO
-  { keywords: ["social media", "social", "instagram", "linkedin", "twitter", "tiktok", "community"], roleId: "social-media-manager" },
-  { keywords: ["seo", "search engine", "keyword", "organic", "backlink", "ranking"], roleId: "seo-specialist" },
-
-  // Product & Pricing
-  { keywords: ["pricing", "price", "monetization", "willingness to pay", "subscription", "freemium"], roleId: "pricing-analyst" },
-  { keywords: ["product", "feature", "roadmap", "pmf", "product-market fit", "user feedback"], roleId: "product-analyst" },
-];
-
-function deriveRoleIds(brief: string, outputExpectations: string): string[] {
-  const lower = `${brief} ${outputExpectations}`.toLowerCase();
-  const roleIds = new Set<string>();
-
-  // Always include planner and reviewer
-  roleIds.add("mission-planner");
-  roleIds.add("editor-reviewer");
-
-  // Match roles based on keywords in the brief
-  for (const trigger of ROLE_TRIGGERS) {
-    if (trigger.keywords.some((kw) => lower.includes(kw))) {
-      roleIds.add(trigger.roleId);
-    }
-  }
-
-  // If we only have planner + reviewer, add research + strategy as sensible defaults
-  if (roleIds.size <= 2) {
-    roleIds.add("research-lead");
-    roleIds.add("strategy-lead");
-  }
-
-  return Array.from(roleIds);
-}
+// ─── Generative Team Designer ───
+// Instead of picking from a fixed catalog, the orchestrator DESIGNS a team
+// tailored to the specific mission. Each role is created from scratch based
+// on what the brief actually needs.
 
 function buildSystemPrompt(member: TeamMember) {
   return [
@@ -143,7 +67,6 @@ function buildSystemPrompt(member: TeamMember) {
   ].join("\n\n");
 }
 
-// Diverse agent names for larger teams
 const AGENT_NAMES = [
   "Avery", "Morgan", "Taylor", "Jordan", "Riley",
   "Casey", "Quinn", "Alex", "Sam", "Jamie",
@@ -151,135 +74,250 @@ const AGENT_NAMES = [
   "Charlie", "Dakota", "Emery", "Finley", "Harper",
 ];
 
+/**
+ * Analyze the brief and extract what NEEDS to be done.
+ * Returns a list of "needs" — each need becomes a role.
+ */
+function analyzeBriefNeeds(brief: string, outputs: string, goal: string): Array<{
+  need: string;
+  title: string;
+  purpose: string;
+  skills: string[];
+  deliverable: string;
+  phase: number;
+  workType: "planning" | "researching" | "writing" | "meeting";
+}> {
+  const lower = `${brief} ${outputs} ${goal}`.toLowerCase();
+  const needs: Array<{
+    need: string;
+    title: string;
+    purpose: string;
+    skills: string[];
+    deliverable: string;
+    phase: number;
+    workType: "planning" | "researching" | "writing" | "meeting";
+  }> = [];
+
+  // Always need someone to frame the mission
+  needs.push({
+    need: "mission-framing",
+    title: "Mission Lead",
+    purpose: `Frame "${goal}" into a clear execution plan with assumptions and success criteria.`,
+    skills: ["brief analysis", "scoping", "risk framing"],
+    deliverable: "mission-framework",
+    phase: 0,
+    workType: "planning",
+  });
+
+  // Parse expected outputs — each output might need a dedicated person
+  const outputList = outputs.split(/[,;]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+  // Detect WHAT the brief is asking for and generate appropriate roles
+  const detectedNeeds: Array<{ pattern: RegExp; need: () => typeof needs[0] }> = [
+    // Research needs
+    { pattern: /research|veille|investigation|study|evidence|data gathering/,
+      need: () => ({ need: "research", title: "Research Analyst", purpose: `Gather evidence and data to support "${goal}". Compile verified sources and identify knowledge gaps.`, skills: ["research", "source validation", "synthesis"], deliverable: "research-findings", phase: 1, workType: "researching" as const }) },
+    // Data/metrics
+    { pattern: /data|metrics|kpi|analytics|numbers|benchmark|quantitative/,
+      need: () => ({ need: "data-analysis", title: "Data Analyst", purpose: `Extract quantitative insights relevant to "${goal}". Contextualize metrics with benchmarks.`, skills: ["data analysis", "metrics interpretation", "benchmarking"], deliverable: "data-analysis", phase: 1, workType: "researching" as const }) },
+    // Competition
+    { pattern: /competitor|competitive|landscape|positioning|market map|differentiat/,
+      need: () => ({ need: "competitive-intel", title: "Competitive Intelligence Analyst", purpose: `Map the competitive landscape and identify positioning opportunities for "${goal}".`, skills: ["competitive intelligence", "market mapping"], deliverable: "competitive-analysis", phase: 1, workType: "researching" as const }) },
+    // Strategy
+    { pattern: /strateg|plan|action|roadmap|priorities|direction|recommend/,
+      need: () => ({ need: "strategy", title: "Strategy Advisor", purpose: `Convert research findings into actionable strategy and recommendations for "${goal}".`, skills: ["strategy", "synthesis", "prioritization"], deliverable: "strategy-document", phase: 2, workType: "writing" as const }) },
+    // Content
+    { pattern: /content|blog|editorial|article|copy|writing|calendar/,
+      need: () => ({ need: "content", title: "Content Strategist", purpose: `Design and draft content deliverables aligned with "${goal}".`, skills: ["content strategy", "copywriting", "editorial planning"], deliverable: "content-deliverable", phase: 2, workType: "writing" as const }) },
+    // Communication / PR
+    { pattern: /communicat|press|pr|messaging|narrative|investor|stakeholder|memo/,
+      need: () => ({ need: "communications", title: "Communications Specialist", purpose: `Craft messaging and communications materials for "${goal}".`, skills: ["messaging", "narrative design", "stakeholder communication"], deliverable: "communications-package", phase: 2, workType: "writing" as const }) },
+    // Marketing
+    { pattern: /marketing|campaign|promotion|go-to-market|gtm|channel|launch strategy/,
+      need: () => ({ need: "marketing", title: "Marketing Strategist", purpose: `Design the marketing approach for "${goal}" — channels, timing, and messaging.`, skills: ["marketing strategy", "channel planning", "campaign design"], deliverable: "marketing-plan", phase: 2, workType: "writing" as const }) },
+    // Sales
+    { pattern: /sales|selling|pipeline|prospection|prospect|outbound|icp|deal/,
+      need: () => ({ need: "sales", title: "Sales Strategist", purpose: `Design the sales approach for "${goal}" — ICP, outreach, and closing strategy.`, skills: ["sales strategy", "ICP definition", "pipeline design"], deliverable: "sales-playbook", phase: 2, workType: "writing" as const }) },
+    // Outbound / SDR
+    { pattern: /outbound|cold|sdr|sequence|email template|lead gen/,
+      need: () => ({ need: "outbound", title: "Outbound Specialist", purpose: `Build prospection playbooks and outreach sequences for "${goal}".`, skills: ["outbound prospection", "cold outreach", "sequence design"], deliverable: "outbound-playbook", phase: 2, workType: "writing" as const }) },
+    // Financial
+    { pattern: /budget|financial|forecast|revenue|cost|pricing|investment|fiscal/,
+      need: () => ({ need: "finance", title: "Financial Analyst", purpose: `Analyze the financial dimensions of "${goal}" — budgets, projections, and risk.`, skills: ["financial analysis", "budgeting", "forecasting"], deliverable: "financial-analysis", phase: 1, workType: "researching" as const }) },
+    // Legal
+    { pattern: /legal|compliance|gdpr|terms|contract|regulat|ip|patent/,
+      need: () => ({ need: "legal", title: "Legal & Compliance Advisor", purpose: `Review legal and compliance implications of "${goal}".`, skills: ["legal review", "compliance", "contract analysis"], deliverable: "legal-review", phase: 1, workType: "researching" as const }) },
+    // HR / People
+    { pattern: /onboarding|culture|handbook|policy|hire|employee|team building|people/,
+      need: () => ({ need: "people", title: "People & Culture Specialist", purpose: `Design people-related deliverables for "${goal}".`, skills: ["onboarding", "culture design", "policy writing"], deliverable: "people-deliverable", phase: 2, workType: "writing" as const }) },
+    // Events
+    { pattern: /event|conference|meetup|launch event|webinar|workshop|venue/,
+      need: () => ({ need: "events", title: "Event Coordinator", purpose: `Plan and organize event logistics for "${goal}".`, skills: ["event planning", "logistics", "coordination"], deliverable: "event-plan", phase: 2, workType: "planning" as const }) },
+    // Tech
+    { pattern: /tech|technology|stack|architecture|infrastructure|devops|cloud|migration/,
+      need: () => ({ need: "tech", title: "Technical Advisor", purpose: `Evaluate technical decisions and architecture for "${goal}".`, skills: ["architecture review", "tech evaluation", "scalability"], deliverable: "tech-assessment", phase: 1, workType: "researching" as const }) },
+    // Security
+    { pattern: /security|audit|vulnerability|penetration|hardening|cyber|soc2/,
+      need: () => ({ need: "security", title: "Security Advisor", purpose: `Assess security posture and risks related to "${goal}".`, skills: ["security assessment", "vulnerability analysis"], deliverable: "security-audit", phase: 1, workType: "researching" as const }) },
+    // Brand
+    { pattern: /brand|identity|visual|logo|style guide|tone of voice/,
+      need: () => ({ need: "brand", title: "Brand Strategist", purpose: `Define brand positioning and guidelines for "${goal}".`, skills: ["brand strategy", "positioning", "tone of voice"], deliverable: "brand-guidelines", phase: 2, workType: "writing" as const }) },
+    // UX
+    { pattern: /ux|user research|persona|journey|user experience|interview/,
+      need: () => ({ need: "ux", title: "User Research Lead", purpose: `Understand user needs and behaviors relevant to "${goal}".`, skills: ["user research", "persona development", "journey mapping"], deliverable: "user-research", phase: 1, workType: "researching" as const }) },
+    // SEO
+    { pattern: /seo|search engine|keyword|organic|backlink|ranking/,
+      need: () => ({ need: "seo", title: "SEO Specialist", purpose: `Optimize for organic discovery in "${goal}".`, skills: ["keyword research", "on-page SEO", "content optimization"], deliverable: "seo-strategy", phase: 2, workType: "writing" as const }) },
+    // Social
+    { pattern: /social media|social|instagram|linkedin|twitter|tiktok|community/,
+      need: () => ({ need: "social", title: "Social Media Strategist", purpose: `Plan social media presence for "${goal}".`, skills: ["social media strategy", "content planning", "community management"], deliverable: "social-strategy", phase: 2, workType: "writing" as const }) },
+    // Product
+    { pattern: /product|feature|roadmap|pmf|product.market fit/,
+      need: () => ({ need: "product", title: "Product Analyst", purpose: `Analyze product-market fit and features for "${goal}".`, skills: ["product analysis", "feature prioritization"], deliverable: "product-analysis", phase: 1, workType: "researching" as const }) },
+    // Pricing
+    { pattern: /pricing|price|monetization|willingness to pay|subscription|freemium/,
+      need: () => ({ need: "pricing", title: "Pricing Analyst", purpose: `Analyze pricing models for "${goal}".`, skills: ["pricing strategy", "competitive pricing"], deliverable: "pricing-analysis", phase: 1, workType: "researching" as const }) },
+    // Project management
+    { pattern: /project|timeline|milestone|schedule|coordination|dependencies|deadline/,
+      need: () => ({ need: "project-mgmt", title: "Project Coordinator", purpose: `Organize work, timelines, and dependencies for "${goal}".`, skills: ["project planning", "timeline management"], deliverable: "project-plan", phase: 2, workType: "planning" as const }) },
+    // Growth
+    { pattern: /growth|scale|funnel|acquisition|retention|churn/,
+      need: () => ({ need: "growth", title: "Growth Advisor", purpose: `Identify growth levers and optimization opportunities for "${goal}".`, skills: ["growth strategy", "funnel optimization"], deliverable: "growth-plan", phase: 2, workType: "writing" as const }) },
+    // Advisory / Board
+    { pattern: /advisor|advisory|board|governance|oversight|counsel/,
+      need: () => ({ need: "advisory", title: "Strategic Advisor", purpose: `Provide senior strategic oversight for "${goal}".`, skills: ["strategic advisory", "risk assessment", "governance"], deliverable: "strategic-memo", phase: 1, workType: "researching" as const }) },
+    // Operations
+    { pattern: /process|operations|workflow|sop|documentation|procedure/,
+      need: () => ({ need: "operations", title: "Operations Designer", purpose: `Design processes and operational structures for "${goal}".`, skills: ["process design", "operations", "documentation"], deliverable: "operations-doc", phase: 2, workType: "writing" as const }) },
+  ];
+
+  // Match needs from brief
+  const matched = new Set<string>();
+  for (const { pattern, need } of detectedNeeds) {
+    if (pattern.test(lower) && !matched.has(need().need)) {
+      const n = need();
+      matched.add(n.need);
+      needs.push(n);
+    }
+  }
+
+  // Also check if specific outputs were requested that we haven't covered
+  for (const output of outputList) {
+    if (output.includes("report") && !matched.has("research")) {
+      needs.push({ need: "report-writer", title: "Report Writer", purpose: `Write the ${output} for "${goal}".`, skills: ["report writing", "synthesis"], deliverable: slugFromTitle(output), phase: 2, workType: "writing" });
+      matched.add("report-writer");
+    }
+  }
+
+  // If no specific needs detected, add research + strategy as defaults
+  if (needs.length <= 1) {
+    needs.push({ need: "research", title: "Research Lead", purpose: `Gather context and evidence for "${goal}".`, skills: ["research", "analysis"], deliverable: "research-brief", phase: 1, workType: "researching" });
+    needs.push({ need: "strategy", title: "Strategy Lead", purpose: `Synthesize findings into actionable recommendations for "${goal}".`, skills: ["strategy", "synthesis"], deliverable: "action-plan", phase: 2, workType: "writing" });
+  }
+
+  // Always end with a reviewer
+  needs.push({
+    need: "review",
+    title: "Quality Reviewer",
+    purpose: `Review all deliverables for "${goal}" — ensure coherence, accuracy, and completeness.`,
+    skills: ["editing", "quality review", "document QA"],
+    deliverable: "final-deliverable",
+    phase: 3,
+    workType: "writing",
+  });
+
+  return needs;
+}
+
 function buildTeamProposal(input: CreateWorkspaceInput, assumptions: string[]): TeamProposal {
-  const roleIds = deriveRoleIds(input.rawBrief, input.outputExpectations);
+  const needs = analyzeBriefNeeds(input.rawBrief, input.outputExpectations, input.missionGoal);
 
-  const roles = roleIds
-    .map((roleId) => getRoleTemplate(roleId))
-    .filter((template): template is NonNullable<typeof template> => Boolean(template))
-    .map((template, index) => {
-      const displayName = AGENT_NAMES[index % AGENT_NAMES.length];
-      const member: TeamMember = {
-        agentId: nanoid(),
-        roleId: template.roleId,
-        title: template.title,
-        displayName,
-        responsibilities: [
-          template.purpose,
-          `Protect these assumptions: ${assumptions.slice(0, 2).join(" / ")}`,
-        ],
-        rationale: `Included for ${template.skills.slice(0, 2).join(" and ")}.`,
-        systemPrompt: "",
-        state: "idle",
-      };
+  const roles: TeamMember[] = needs.map((need, index) => {
+    const displayName = AGENT_NAMES[index % AGENT_NAMES.length];
+    // Try to find a matching template for richer prompts, but the role is custom
+    const closestTemplate = ROLE_TEMPLATES.find((t) =>
+      need.skills.some((s) => t.skills.includes(s)),
+    );
+    const promptFragments = closestTemplate?.promptFragments ?? [];
 
-      member.systemPrompt = buildSystemPrompt(member);
-      return member;
-    });
+    const member: TeamMember = {
+      agentId: nanoid(),
+      roleId: `custom-${slugFromTitle(need.need)}`,
+      title: need.title,
+      displayName,
+      responsibilities: [
+        need.purpose,
+        ...promptFragments,
+      ],
+      rationale: `Needed for: ${need.skills.join(", ")}.`,
+      systemPrompt: "",
+      state: "idle",
+    };
+
+    member.systemPrompt = buildSystemPrompt(member);
+    return member;
+  });
 
   const teamSize = roles.length;
   const rationale = teamSize <= 4
-    ? `A lean ${teamSize}-person squad for a focused mission.`
+    ? `A focused ${teamSize}-person team designed specifically for this mission.`
     : teamSize <= 8
-      ? `A ${teamSize}-person cross-functional team to cover the mission's breadth.`
-      : `A ${teamSize}-person task force — the mission scope requires broad coverage.`;
+      ? `A ${teamSize}-person team — each role was identified from the brief's requirements.`
+      : `A ${teamSize}-person task force — the mission scope requires specialized coverage across multiple domains.`;
 
-  // Derive expected outputs from the roles' deliverable types
-  const estimatedOutputs = Array.from(
-    new Set(roles.flatMap((r) => {
-      const tmpl = getRoleTemplate(r.roleId);
-      return tmpl ? [tmpl.deliverableTypes[0]] : [];
-    }).filter(Boolean)),
-  ).map((type) => type.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
+  const estimatedOutputs = needs
+    .filter((n) => n.phase > 0 && n.phase < 3)
+    .map((n) => n.deliverable.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
 
-  return {
-    name: `${slugFromTitle(input.missionGoal || "Mission")} Crew`,
-    rationale,
-    estimatedOutputs,
-    roles,
-  };
+  const name = `${slugFromTitle(input.missionGoal || "Mission")} Crew`;
+  // Cache needs so buildTaskBoard can use them without re-analyzing
+  needsCache.set(name, needs);
+
+  return { name, rationale, estimatedOutputs, roles };
 }
 
-// Maps role type to a work phase. Used for task generation and ordering.
-const ROLE_WORK_PHASES: Record<string, { phase: number; workType: TaskCard["workType"]; taskTitle: string; taskDesc: string }> = {
-  "mission-planner": { phase: 0, workType: "planning", taskTitle: "Frame the mission and sharpen the operating assumptions", taskDesc: "Produce a concise mission framing note before the team branches out." },
-  "research-lead": { phase: 1, workType: "researching", taskTitle: "Compile market and evidence signals", taskDesc: "Gather citable signals from the brief and light web research." },
-  "data-analyst": { phase: 1, workType: "researching", taskTitle: "Analyze quantitative data and metrics", taskDesc: "Extract insights from available data, benchmarks, and quantitative evidence." },
-  "competitive-analyst": { phase: 1, workType: "researching", taskTitle: "Map the competitive landscape", taskDesc: "Identify competitors, positioning gaps, and differentiation opportunities." },
-  "ux-researcher": { phase: 1, workType: "researching", taskTitle: "Synthesize user needs and pain points", taskDesc: "Build personas and journey maps from available user context." },
-  "strategy-lead": { phase: 2, workType: "writing", taskTitle: "Turn findings into an action plan", taskDesc: "Synthesize the evidence into concrete next steps and recommendations." },
-  "content-writer": { phase: 2, workType: "writing", taskTitle: "Draft content deliverables", taskDesc: "Write the content pieces specified in the brief." },
-  "communications-lead": { phase: 2, workType: "writing", taskTitle: "Craft messaging and communications", taskDesc: "Develop key messages, narratives, and communication materials." },
-  "brand-strategist": { phase: 2, workType: "writing", taskTitle: "Define brand positioning and guidelines", taskDesc: "Establish brand identity, voice, and positioning strategy." },
-  "marketing-lead": { phase: 2, workType: "writing", taskTitle: "Design the marketing strategy", taskDesc: "Build the go-to-market plan with channels, timing, and messaging." },
-  "project-manager": { phase: 2, workType: "planning", taskTitle: "Build the project timeline and milestones", taskDesc: "Organize work into phases with clear owners and deadlines." },
-  "operations-lead": { phase: 2, workType: "writing", taskTitle: "Design operational processes", taskDesc: "Document workflows, procedures, and operational structures." },
-  "hr-specialist": { phase: 2, workType: "writing", taskTitle: "Build people-related deliverables", taskDesc: "Create onboarding, culture, or policy documents." },
-  "financial-analyst": { phase: 2, workType: "writing", taskTitle: "Prepare financial analysis", taskDesc: "Analyze budgets, forecasts, and financial metrics." },
-  "event-planner": { phase: 2, workType: "planning", taskTitle: "Plan event logistics and run-of-show", taskDesc: "Organize venue, timeline, promotion, and logistics." },
-  "editor-reviewer": { phase: 3, workType: "writing", taskTitle: "Review the packet and prepare final deliverables", taskDesc: "Edit the artifacts into a clean final packet with explicit review notes." },
-  "cfo-advisor": { phase: 1, workType: "researching", taskTitle: "Assess financial risks and fiscal position", taskDesc: "Review financial data, identify risks, and prepare fiscal recommendations." },
-  "legal-counsel": { phase: 1, workType: "researching", taskTitle: "Review legal and compliance implications", taskDesc: "Identify legal risks, compliance gaps, and contractual concerns." },
-  "growth-advisor": { phase: 2, workType: "writing", taskTitle: "Design growth strategy and funnel optimization", taskDesc: "Identify growth levers and propose scaling strategies." },
-  "industry-expert": { phase: 1, workType: "researching", taskTitle: "Provide industry context and trend analysis", taskDesc: "Share domain expertise and map relevant industry trends." },
-  "sales-director": { phase: 2, workType: "planning", taskTitle: "Design sales strategy and define ICP", taskDesc: "Structure the sales process and define ideal customer profile." },
-  "sdr-lead": { phase: 2, workType: "writing", taskTitle: "Build outbound sequences and templates", taskDesc: "Create prospection playbooks, email sequences, and outreach scripts." },
-  "account-executive": { phase: 2, workType: "writing", taskTitle: "Structure deal flow and objection handling", taskDesc: "Build pitch framework, objection handlers, and closing strategies." },
-  "sales-ops": { phase: 2, workType: "writing", taskTitle: "Design CRM workflow and reporting", taskDesc: "Structure CRM processes, dashboards, and sales enablement materials." },
-  "cto-advisor": { phase: 1, workType: "researching", taskTitle: "Evaluate tech stack and architecture", taskDesc: "Review current technology decisions and recommend improvements." },
-  "security-auditor": { phase: 1, workType: "researching", taskTitle: "Assess security posture and vulnerabilities", taskDesc: "Identify security risks and recommend hardening measures." },
-  "social-media-manager": { phase: 2, workType: "writing", taskTitle: "Plan social media strategy and calendar", taskDesc: "Design social media presence with content calendar and engagement plan." },
-  "seo-specialist": { phase: 2, workType: "writing", taskTitle: "Build SEO and keyword strategy", taskDesc: "Optimize content strategy for search with keyword research and on-page plan." },
-  "pricing-analyst": { phase: 1, workType: "researching", taskTitle: "Analyze pricing models and competition", taskDesc: "Research competitive pricing and model willingness-to-pay." },
-  "product-analyst": { phase: 1, workType: "researching", taskTitle: "Analyze product-market fit and features", taskDesc: "Assess current product position and prioritize feature opportunities." },
-};
+// Store the needs analysis alongside the proposal so the task board can use it.
+// This avoids re-analyzing. We attach it to a module-level cache keyed by proposal name.
+const needsCache = new Map<string, ReturnType<typeof analyzeBriefNeeds>>();
 
 function buildTaskBoard(teamProposal: TeamProposal): TaskCard[] {
   const tasks: TaskCard[] = [];
+  const needs = needsCache.get(teamProposal.name) ?? [];
 
-  // Sort roles by work phase
-  const sortedRoles = [...teamProposal.roles].sort((a, b) => {
-    const phaseA = ROLE_WORK_PHASES[a.roleId]?.phase ?? 2;
-    const phaseB = ROLE_WORK_PHASES[b.roleId]?.phase ?? 2;
-    return phaseA - phaseB;
-  });
+  // Each role maps 1:1 to a need (same order as buildTeamProposal)
+  for (let i = 0; i < teamProposal.roles.length; i++) {
+    const role = teamProposal.roles[i];
+    const need = needs[i];
+    if (!need) continue;
 
-  for (const role of sortedRoles) {
-    const config = ROLE_WORK_PHASES[role.roleId];
-    if (!config) continue;
+    const artifactId = need.deliverable;
+    const isReviewer = need.phase === 3;
+    const isMissionLead = need.phase === 0;
 
-    const artifactId = role.roleId === "editor-reviewer"
-      ? "final-deliverable"
-      : role.roleId === "mission-planner"
-        ? "mission-summary"
-        : `${role.roleId}-output`;
-
-    // Dependencies: phase N depends on all phase N-1 tasks
-    const deps = tasks
-      .filter((t) => {
-        const tRole = sortedRoles.find((r) => r.agentId === t.ownerAgentId);
-        const tPhase = tRole ? (ROLE_WORK_PHASES[tRole.roleId]?.phase ?? 2) : 0;
-        return tPhase === config.phase - 1;
-      })
-      .map((t) => t.id);
-
-    // Editor depends on ALL previous tasks
-    const finalDeps = role.roleId === "editor-reviewer"
-      ? tasks.map((t) => t.id)
-      : deps;
+    // Dependencies: each phase depends on the previous phase
+    const deps = isReviewer
+      ? tasks.map((t) => t.id) // reviewer depends on everything
+      : tasks.filter((_, j) => {
+          const prevNeed = needs[j];
+          return prevNeed && prevNeed.phase === need.phase - 1;
+        }).map((t) => t.id);
 
     tasks.push({
       id: nanoid(),
-      title: config.taskTitle,
+      title: isMissionLead
+        ? "Frame the mission and define success criteria"
+        : isReviewer
+          ? "Review all deliverables and prepare the final packet"
+          : `${role.title}: ${need.purpose.split(".")[0]}`,
       ownerAgentId: role.agentId,
       status: "todo",
-      description: config.taskDesc,
-      workType: config.workType,
+      description: need.purpose,
+      workType: need.workType,
       acceptanceCriteria: [
-        `Deliverable is complete and ready for review.`,
-        `Sources and assumptions are documented.`,
+        "Deliverable is complete and addresses the brief's requirements.",
+        "Sources and assumptions are documented.",
       ],
-      dependencies: finalDeps,
+      dependencies: deps,
       linkedArtifactIds: [artifactId],
     });
   }
