@@ -15,7 +15,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Team Foundry",
-  description: "Local-first pixel teams for structured AI knowledge work.",
+  description: "Create AI teams and watch them work in a pixel office.",
 };
 
 export default function RootLayout({
