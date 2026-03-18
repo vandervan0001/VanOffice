@@ -26,7 +26,7 @@ This entire project was vibecoded — designed, planned, and implemented through
 - Two-stage AI code review (spec compliance + quality) after each task
 - Visually verified the result through automated browser screenshots
 
-**Why this matters:** This is what building software looks like when you describe what you want and AI builds it. The entire project — pixel-art office, warm theme, generative team composition, 30+ role types, idle-game visuals, 10 business presets, 20 tests — was built in a single conversation.
+**Why this matters:** This is what building software looks like when you describe what you want and AI builds it. The entire project — pixel-art office, warm theme, generative team composition, 30+ role types, idle-game visuals, 10 business presets, 26 tests — was built in a single conversation.
 
 ---
 
@@ -52,12 +52,11 @@ Team size adapts automatically: 4 agents for focused missions, 12+ for complex c
 
 ## The pixel office
 
-The office is rendered in **GBA / RPG Maker 3/4 view** using pure HTML/CSS — no game engine, no WebGL. Style inspired by idle games on Android.
+The office is rendered with **Phaser.js 3** in a GBA / RPG Maker 3/4 view. Characters use **LPC (Liberated Pixel Cup) spritesheets** for walk and idle animations. Furniture and environment tiles are LPC-style pixel art.
 
-**Agents** are pixel-art characters with:
-- Distinct appearances: hair styles (short, long, bald, ponytail), skin tones, clothing colors
-- Accessories: glasses, ties, hats
-- Idle animations: subtle bob when sitting, floating state bubbles
+**Agents** are LPC-spritesheet characters (`public/sprites/chars/char_0.png` through `char_5.png`) with:
+- Distinct appearances via spritesheet variants
+- Walk animations and idle states
 - State bubbles: magnifying glass (research), pencil (writing), notepad (planning), clock (waiting), checkmark (done)
 
 **The office** scales with team size and includes:
@@ -112,6 +111,17 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). Pick a preset or write your own brief.
 
+### Optional: Paperclip orchestration
+
+[Paperclip AI](https://paperclipai.com) is an optional orchestration sidecar. When running, Team Foundry detects it via health check on `localhost:3100` and delegates agent execution to Paperclip for managed scheduling and tool use.
+
+```bash
+npm install -g paperclipai
+paperclipai run
+```
+
+If Paperclip is not running, the app falls back to its built-in scheduler.
+
 ### Requirements
 
 - **Node.js** >= 20
@@ -128,17 +138,19 @@ The app works out of the box with a **mock provider** (no API key needed) — pe
 To use real AI providers, create `.env.local`:
 
 ```bash
-# Pick one or more:
+# Primary tested providers:
+GEMINI_API_KEY=...              # Google Gemini (default model: gemini-2.5-flash)
+ANTHROPIC_API_KEY=sk-ant-...    # Anthropic Claude (default model: claude-sonnet-4-6)
+
+# Additional providers:
 OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-GEMINI_API_KEY=...
 
 # Or use a local model:
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=llama3.1
 ```
 
-See `.env.example` for all options.
+Gemini and Anthropic are the primary tested providers. See `.env.example` for all options.
 
 ---
 
@@ -147,7 +159,9 @@ See `.env.example` for all options.
 | Layer | Tech |
 |-------|------|
 | Framework | Next.js 16 + React 19 + TypeScript |
-| Rendering | Pure HTML/CSS + inline SVG pixel-art (no game engine) |
+| Rendering | Phaser.js 3 + LPC spritesheets |
+| LLM Providers | Gemini, Anthropic (Claude), OpenAI, Ollama |
+| Orchestration | Paperclip AI (optional sidecar) |
 | Database | SQLite (better-sqlite3) + Drizzle ORM |
 | Styling | Tailwind CSS 4 |
 | Testing | Vitest + Testing Library |
@@ -160,23 +174,30 @@ src/
   app/                    # Next.js routes + API endpoints
     api/workspaces/       # REST + SSE endpoints
   components/
-    office/               # Pixel office: agents, furniture, meeting bubbles
+    office/
+      phaser-office.tsx   # Phaser game scene (renders the pixel office)
     composer/             # Mission brief form (overlay with presets)
     sidebar/              # Approval gates + command input (v2)
     outputs/              # Artifact cards panel with markdown expand
   lib/
     runtime/
       engine.ts           # Generative team designer + workspace lifecycle
-      projector.ts        # Event → state reconstruction
+      projector.ts        # Event -> state reconstruction
       scheduler.ts        # Execution timeline + event emission
+      adapters/
+        paperclip.ts      # Paperclip REST client
+      paperclip-executor.ts # Paperclip execution bridge
       adapters/           # Provider (LLM) + tool adapters
     db/                   # SQLite schema + client
     state/
       office-layout.ts    # Dynamic office grid that scales with team size
     role-templates.ts     # 30+ role reference library for prompt enrichment
     types.ts              # All domain types (normalized, public)
-tests/                    # 20 unit + component tests
-public/sprites/           # SVG bubble icons for agent states
+tests/                    # 26 unit + component tests
+public/sprites/
+  chars/                  # LPC character spritesheets (char_0.png - char_5.png)
+  bubbles/                # SVG bubble icons for agent states
+.paperclip-data/          # Paperclip runtime data (gitignored)
 ```
 
 ## How it works
@@ -191,6 +212,10 @@ When you submit a brief, the engine:
 
 The 30+ role templates serve as a **reference library** for enriching agent prompts, not as the source of truth for team composition.
 
+### Real LLM execution
+
+The scheduler calls the configured provider's completion API to generate real deliverables. Gemini and Anthropic (Claude) are fully supported and tested. When an agent's task becomes active, the scheduler builds a prompt from the agent's role, skills, and task description, then streams the response from the LLM provider.
+
 ### Event-sourced runtime
 
 Every state change is an append-only event. The UI reconstructs state by replaying events, enabling deterministic behavior and future replay support.
@@ -204,7 +229,11 @@ Three mandatory human checkpoints:
 
 ### Provider abstraction
 
-Swap between OpenAI, Anthropic, Gemini, Ollama, or mock with a single config change. The runtime doesn't care which model powers the agents.
+Swap between Gemini, Anthropic, OpenAI, Ollama, or mock with a single config change. The runtime doesn't care which model powers the agents.
+
+### Paperclip orchestration
+
+When Paperclip AI is running on `localhost:3100`, Team Foundry detects it automatically and routes agent execution through the Paperclip bridge. Paperclip handles scheduling, tool routing, and execution lifecycle. If Paperclip is unavailable, the app uses its built-in scheduler seamlessly.
 
 ### Truthful visualization
 
@@ -215,19 +244,19 @@ Agents only move when their actual task state changes. No fake ambient animation
 ## Testing
 
 ```bash
-npm test          # 20 unit + component tests
+npm test          # 26 unit + component tests
 npm run lint      # ESLint
 npm run build     # Production build
 ```
 
 ### Manual E2E test
 
-1. `npm run dev` → open localhost:3000
-2. Pick any preset (e.g., "Sales & Prospection") → "Propose a team"
-3. Review the custom team in the sidebar → "Validate"
-4. Review the task board → "Validate"
+1. `npm run dev` -> open localhost:3000
+2. Pick any preset (e.g., "Sales & Prospection") -> "Propose a team"
+3. Review the custom team in the sidebar -> "Validate"
+4. Review the task board -> "Validate"
 5. Watch agents work (~10 seconds) — bubbles change, artifacts appear
-6. "Validate" final deliverables → mission complete
+6. "Validate" final deliverables -> mission complete
 7. Click an artifact card to expand and read the full content
 
 ---
@@ -238,47 +267,46 @@ npm run build     # Production build
 
 - [x] Generative team composition — roles created from brief, not from catalog
 - [x] 10 business presets (marketing, sales, tech, advisory, etc.)
-- [x] Idle-game visual style with detailed SVG furniture and pixel-art agents
-- [x] Agent accessories (glasses, ties, hats) and hair style variants
-- [x] Idle animations (sitting bob, bubble float)
+- [x] Phaser.js 3 rendering with LPC character spritesheets
+- [x] LPC tile-based furniture and environment art
+- [x] Real LLM execution — Gemini and Anthropic (Claude) fully working
+- [x] Paperclip AI integration for optional orchestration
+- [x] Agent state bubbles and idle animations
 - [x] Scalable office (2-20+ agents, break room, multiple meeting rooms)
 - [x] Dashboard TV, bookshelves, printer, water cooler, filing cabinets, rugs
-- [x] GBA 3/4 pixel-art office with HTML/CSS rendering
 - [x] Warm cream theme, L-shaped layout
 - [x] Event-sourced runtime with approval gates
 
-### v3 — Web research & real agent tools
+### v3 — Pathfinding, web research & tool use
 
-- [ ] **Web research tool** — agents can search the web (Playwright, MCP, or API-based)
+- [ ] **A* pathfinding** — agents navigate the office grid realistically
+- [ ] **Web research tool** — agents can search the web (Playwright browser automation)
+- [ ] **MCP integration** — connect to any MCP-compatible tool server
 - [ ] **Document analysis** — agents can read and summarize uploaded PDFs/docs in depth
 - [ ] **Citation system** — every claim in deliverables links back to its source
 - [ ] **Tool use visualization** — see in the office when an agent is browsing the web vs writing
-- [ ] **Real LLM execution** — connect to OpenAI/Claude/Gemini for actual AI-generated content
 
 ### v4 — Live interaction & collaboration
 
 - [ ] **Real-time chat** — give instructions to the team during execution
 - [ ] **Agent micro-management** — click an agent, see their task, redirect them
+- [ ] **Multi-workspace** — run several teams in parallel
 - [ ] **Task reassignment** — drag tasks between agents on the task board
 - [ ] **Notification system** — agents flag when they need human input
-- [ ] **Meeting transcripts** — see what agents discussed in their meetings
 
-### v5 — Multi-team & persistence
+### v5 — Export, replay & extensibility
 
-- [ ] **Multiple workspaces** — run several teams in parallel
-- [ ] **Run history** — browse past missions and replay them
-- [ ] **Template library** — save and share team compositions
 - [ ] **Export** — download deliverables as PDF, DOCX, or markdown
 - [ ] **Replay mode** — scrub through a completed run like a timeline
+- [ ] **Plugin system** — add custom tools (Slack, Jira, GitHub, etc.)
+- [ ] **Run history** — browse past missions and replay them
+- [ ] **Template library** — save and share team compositions
 
 ### Future vision
 
-- [ ] **LPC sprite packs** — swap in real RPG Maker-style character sprites
 - [ ] **Custom office layouts** — design your own office floorplan
 - [ ] **Agent personalities** — each agent has quirks and working styles visible in behavior
 - [ ] **Multi-user** — invite teammates to watch and interact with the same office
-- [ ] **Plugin system** — add custom tools (Slack, Jira, GitHub, etc.)
-- [ ] **MCP integration** — connect to any MCP-compatible tool server
 - [ ] **Voice briefs** — describe your mission by speaking instead of typing
 
 ---
@@ -289,7 +317,7 @@ Contributions are welcome! This project is vibecoded and we'd love to keep that 
 
 **Good first issues:**
 - Add more furniture types to the office (water fountain, vending machine, etc.)
-- Improve character sprites (LPC spritesheet integration for real walk animations)
+- Add more LPC character spritesheet variants
 - Add more preset briefs for specific industries
 - Improve artifact rendering (better markdown styles, syntax highlighting)
 - Add dark mode support
@@ -301,10 +329,10 @@ Contributions are welcome! This project is vibecoded and we'd love to keep that 
 - Add export to PDF/DOCX
 
 **Major contributions:**
-- Implement the web research tool adapter (Playwright or API-based)
+- Implement A* pathfinding for agent movement
 - Build the real-time chat system (v4)
 - Add MCP tool server integration
-- Implement real LLM execution with streaming
+- Playwright-based web research tool
 
 See the roadmap above for direction. Open an issue to discuss before starting major work.
 
@@ -316,7 +344,9 @@ Runtime data is stored in `.data/` (gitignored):
 - SQLite DB: `.data/team-foundry.db`
 - Uploaded files: `.data/uploads/<workspace-id>/`
 
-To reset: `rm -rf .data`
+Paperclip runtime data is stored in `.paperclip-data/` (gitignored).
+
+To reset: `rm -rf .data .paperclip-data`
 
 ## Troubleshooting
 
@@ -326,13 +356,16 @@ To reset: `rm -rf .data`
 | `Failed to open database` (Turbopack) | Run `npm run clean:next` then use `npm run dev` |
 | macOS `._*` metadata files | Run `npm run clean:metadata` |
 | Agents not appearing after submit | Clear `.data/` and reload |
+| Paperclip not detected | Ensure `paperclipai run` is active and `localhost:3100/health` returns OK |
+| LLM API key errors | Check `.env.local` has valid keys; Gemini and Anthropic keys are required for real execution |
+| Agents produce empty deliverables | Verify your provider API key is set and the model name is correct in settings |
 
 ## Credits
 
-- Pixel-art bubble icons: custom SVGs
-- Office furniture: custom inline SVGs inspired by idle game aesthetics
-- Agent characters: procedural pixel-art with CSS
-- Sprite reference: [Liberated Pixel Cup](https://lpc.opengameart.org/) (CC-BY-SA 3.0) for future sprite upgrades
+- Pixel-art characters: [Liberated Pixel Cup (LPC)](https://lpc.opengameart.org/) spritesheets (CC-BY-SA 3.0)
+- Office furniture: LPC-style tile assets
+- Bubble icons: custom SVGs
+- Game engine: [Phaser.js 3](https://phaser.io/)
 
 ## License
 

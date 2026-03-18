@@ -68,7 +68,26 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
 
     let destroyed = false;
 
-    import("phaser").then((Phaser) => {
+    // Wait for the container to have real dimensions before booting Phaser.
+    // Flex layouts can report 0 width at mount time.
+    const el = containerRef.current;
+    const waitForSize = new Promise<void>((resolve) => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) { resolve(); return; }
+      const ro = new ResizeObserver((entries) => {
+        for (const e of entries) {
+          if (e.contentRect.width > 0 && e.contentRect.height > 0) {
+            ro.disconnect();
+            resolve();
+            return;
+          }
+        }
+      });
+      ro.observe(el);
+      // Safety timeout — boot anyway after 2s
+      setTimeout(() => { ro.disconnect(); resolve(); }, 2000);
+    });
+
+    waitForSize.then(() => import("phaser")).then((Phaser) => {
       if (destroyed || !containerRef.current) return;
 
       /* ============================================================ */
