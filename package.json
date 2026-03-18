@@ -16,13 +16,11 @@
     "clean:next": "rm -rf .next"
   },
   "dependencies": {
-    "@pixi/react": "^8.0.5",
     "better-sqlite3": "^12.8.0",
     "drizzle-orm": "^0.45.1",
     "get-proto": "^1.0.1",
     "nanoid": "^5.1.7",
     "next": "^16.1.7",
-    "pixi.js": "^8.17.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",
