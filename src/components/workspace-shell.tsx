@@ -211,7 +211,13 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
             Paperclip
           </span>
         )}
-        {paperclipStatus === "offline" && (
+        {paperclipStatus === "offline" && workspace.providerId !== "mock" && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
+            {workspace.providerId === "gemini" ? "Gemini" : workspace.providerId === "openai" ? "OpenAI" : workspace.providerId === "anthropic" ? "Anthropic" : workspace.providerId}
+          </span>
+        )}
+        {paperclipStatus === "offline" && workspace.providerId === "mock" && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--attention)]/30 bg-[var(--attention-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--attention)]">
             Mock mode
           </span>
@@ -220,8 +226,8 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
 
       <div className="mx-auto flex h-[calc(100%-2.5rem)] max-w-[1600px] gap-4">
         {/* LEFT COLUMN: office + deliverables */}
-        <div className="flex flex-1 flex-col gap-4">
-          <div className="flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <div className="min-h-[400px] flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
             <PhaserOffice snapshot={workspace} />
           </div>
           <div className="shrink-0">

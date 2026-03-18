@@ -15,11 +15,11 @@ export interface OfficeConfig {
   breakRoom: { row: number; col: number; w: number; h: number } | null;
 }
 
-// Desk layout: 3 columns of desks, as many rows as needed
+// Desk layout: 4 columns of desks, wider open-plan office
 function generateDesks(count: number): GridPosition[] {
   const desks: GridPosition[] = [];
-  const DESK_COLS = [3, 9, 15];
-  const FIRST_DESK_ROW = 4;
+  const DESK_COLS = [1, 8, 15, 22];
+  const FIRST_DESK_ROW = 3;
   const ROW_SPACING = 4;
 
   for (let i = 0; i < count; i++) {
@@ -38,16 +38,16 @@ function generateDesks(count: number): GridPosition[] {
 function generateMeetingSeats(count: number, meetingRow: number): GridPosition[] {
   const seats: GridPosition[] = [];
   const room1Seats = [
+    { row: meetingRow, col: 3, zone: "meeting" as const },
     { row: meetingRow, col: 7, zone: "meeting" as const },
-    { row: meetingRow, col: 11, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 3, zone: "meeting" as const },
     { row: meetingRow + 2, col: 7, zone: "meeting" as const },
-    { row: meetingRow + 2, col: 11, zone: "meeting" as const },
   ];
   const room2Seats = [
-    { row: meetingRow, col: 16, zone: "meeting" as const },
-    { row: meetingRow, col: 19, zone: "meeting" as const },
-    { row: meetingRow + 2, col: 16, zone: "meeting" as const },
-    { row: meetingRow + 2, col: 19, zone: "meeting" as const },
+    { row: meetingRow, col: 17, zone: "meeting" as const },
+    { row: meetingRow, col: 21, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 17, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 21, zone: "meeting" as const },
   ];
 
   for (let i = 0; i < count; i++) {
@@ -64,33 +64,34 @@ function generateMeetingSeats(count: number, meetingRow: number): GridPosition[]
 
 /**
  * Generate an office that scales with team size.
- * All sizes get a break room and filled layout — no large empty gaps.
- * 2-5: compact. 6-10: standard. 11+: big open space, 2 meeting rooms.
+ * Wide open-plan layout: 4 desks per row, 28 cols wide.
  */
 export function generateOfficeConfig(teamSize: number): OfficeConfig {
-  const deskRows = Math.ceil(teamSize / 3);
-  const deskZoneEnd = 4 + deskRows * 3;
+  const desksPerRow = 4;
+  const deskRows = Math.ceil(teamSize / desksPerRow);
+  const FIRST_DESK_ROW = 3;
+  const ROW_SPACING = 4;
+  const deskZoneEnd = FIRST_DESK_ROW + deskRows * ROW_SPACING;
   const meetingStartRow = deskZoneEnd + 1;
 
   const needsSecondMeeting = teamSize > 8;
   const meetingZoneHeight = 5;
-  // Break room is always present — even small teams need a kitchen/lounge
-  const breakRoomHeight = 4;
+  const breakRoomHeight = 3;
   const breakRoomStartRow = meetingStartRow + meetingZoneHeight;
-  const totalRows = Math.max(14, breakRoomStartRow + breakRoomHeight + 1);
-  const totalCols = 22;
+  const totalRows = Math.max(16, breakRoomStartRow + breakRoomHeight + 1);
+  const totalCols = 28; // Wide enough for 4 desk columns + corridors
 
   const desks = generateDesks(teamSize);
   const meetingSeats = generateMeetingSeats(teamSize, meetingStartRow + 1);
 
   const meetingRooms = [
-    { row: meetingStartRow, col: 5, w: 8, h: 4.5 },
+    { row: meetingStartRow, col: 1, w: 10, h: 4 },
   ];
   if (needsSecondMeeting) {
-    meetingRooms.push({ row: meetingStartRow, col: 14, w: 7, h: 4.5 });
+    meetingRooms.push({ row: meetingStartRow, col: 15, w: 10, h: 4 });
   }
 
-  const breakRoom = { row: breakRoomStartRow, col: 1, w: 8, h: breakRoomHeight };
+  const breakRoom = { row: breakRoomStartRow, col: 1, w: 12, h: breakRoomHeight };
 
   return { cols: totalCols, rows: totalRows, desks, meetingSeats, meetingRooms, breakRoom };
 }

@@ -185,7 +185,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           g.fillRect(0, TILE * 2.5, this.worldW, 2);
 
           // --- Windows on wall ---
-          const winCols = [1, 5, 9];
+          const winCols = [1, 6, 11, 16, 21];
           for (const c of winCols) {
             const wx = c * TILE;
             const wy = TILE * 0.4;
@@ -345,10 +345,12 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
 
           // --- Plants (green circles) ---
           const plantSpots = [
-            [0, 5],
-            [16, 3],
+            [0, 4],
+            [26, 4],
             [0, 8],
-            [16, cfg.rows - 3],
+            [26, 8],
+            [26, cfg.rows - 3],
+            [13, cfg.rows - 2],
           ];
           for (const [c, r] of plantSpots) {
             if (r >= cfg.rows) continue;
@@ -648,11 +650,11 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           const ch = this.scale.height;
           if (!cw || !ch) return;
 
-          const zoomX = cw / this.worldW;
-          const zoomY = ch / this.worldH;
-          const zoom = Math.min(zoomX, zoomY);
+          // Always fill the width. Let height overflow or pad.
+          const zoom = cw / this.worldW;
 
           cam.setZoom(zoom);
+          cam.setBounds(0, 0, this.worldW, this.worldH);
           cam.centerOn(this.worldW / 2, this.worldH / 2);
         }
       }
@@ -661,14 +663,21 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
       /*  Boot Phaser                                                  */
       /* ============================================================ */
 
+      const el = containerRef.current!;
+      const w = el.clientWidth || el.parentElement?.clientWidth || 800;
+      const h = el.clientHeight || el.parentElement?.clientHeight || 600;
+
       const game = new Phaser.Game({
         type: Phaser.AUTO,
-        parent: containerRef.current!,
-        width: containerRef.current!.clientWidth || 800,
-        height: containerRef.current!.clientHeight || 600,
+        parent: el,
+        width: Math.max(w, 400),
+        height: Math.max(h, 300),
         scene: [OfficeScene],
         pixelArt: true,
-        scale: { mode: Phaser.Scale.RESIZE },
+        scale: {
+          mode: Phaser.Scale.RESIZE,
+          autoCenter: Phaser.Scale.CENTER_BOTH,
+        },
         input: { keyboard: { capture: [] } },
         backgroundColor: "#e0c898",
       });
