@@ -360,13 +360,13 @@ export function MissionComposer({ providers, onCreated }: MissionComposerProps) 
   }
 
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center">
+    <div className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto py-8">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-[var(--background)]/60 backdrop-blur-sm" />
+      <div className="fixed inset-0 bg-[var(--background)]/60 backdrop-blur-sm" />
 
       <form
         onSubmit={handleSubmit}
-        className="relative z-10 w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm"
+        className="relative z-10 my-auto w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-sm"
       >
         <h2 className="text-xl font-semibold text-[var(--foreground)]">
           Create your team
