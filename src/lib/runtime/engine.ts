@@ -16,7 +16,12 @@ import { localToolAdapter } from "@/lib/runtime/adapters/tools";
 import { projectWorkspaceState } from "@/lib/runtime/projector";
 import { clearWorkspaceSchedule, scheduleWorkspaceExecution } from "@/lib/runtime/scheduler";
 import { isPaperclipAvailable } from "@/lib/runtime/adapters/paperclip";
-import { executePaperclipWorkspace, clearPaperclipSchedule } from "@/lib/runtime/paperclip-executor";
+import {
+  executePaperclipWorkspace,
+  createPaperclipCompany,
+  createPaperclipAgents,
+  clearPaperclipSchedule,
+} from "@/lib/runtime/paperclip-executor";
 import type {
   ApprovalGateType,
   ArtifactRecord,
@@ -656,6 +661,19 @@ export async function approveGate(
       }
     }
 
+    // Pre-create Paperclip company + agents when Paperclip is available
+    try {
+      const pcAvailable = await isPaperclipAvailable();
+      if (pcAvailable && snapshot.teamProposal) {
+        const refreshedSnapshot = await getWorkspaceSnapshot(workspaceId);
+        const companyId = await createPaperclipCompany(refreshedSnapshot);
+        await createPaperclipAgents(companyId, refreshedSnapshot.agents, workspaceId);
+        console.log("[engine] Pre-created Paperclip company + agents for workspace", workspaceId);
+      }
+    } catch (err) {
+      console.warn("[engine] Paperclip pre-creation failed (non-fatal):", err);
+    }
+
     await appendEvent(workspaceId, "approval.requested", {
       gateType: "execution_plan",
       message: "Approve the initial task board before the team starts working.",
@@ -663,9 +681,16 @@ export async function approveGate(
     await setWorkspaceStatus(workspaceId, "awaiting_plan_approval");
   } else if (gateType === "execution_plan") {
     await setWorkspaceStatus(workspaceId, "running");
-    // Always use our scheduler (supports both mock and real LLM execution).
-    // Paperclip integration available for future orchestration mode.
-    await scheduleWorkspaceExecution(workspaceId);
+
+    // Use Paperclip executor when available, fall back to built-in scheduler
+    const pcAvailable = await isPaperclipAvailable();
+    if (pcAvailable) {
+      console.log("[engine] Paperclip available — using Paperclip executor");
+      await executePaperclipWorkspace(workspaceId);
+    } else {
+      console.log("[engine] Paperclip not available — using built-in scheduler");
+      await scheduleWorkspaceExecution(workspaceId);
+    }
   } else if (gateType === "final_deliverables") {
     clearWorkspaceSchedule(workspaceId);
     clearPaperclipSchedule(workspaceId);

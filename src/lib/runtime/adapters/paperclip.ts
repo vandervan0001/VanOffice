@@ -1,11 +1,15 @@
 /**
- * Paperclip AI REST client.
+ * Paperclip AI REST client + CLI wrappers.
  *
  * Communicates with a Paperclip sidecar process (default http://localhost:3100).
- * All functions are stateless HTTP calls — the executor handles orchestration.
+ * REST calls for creation (POST), CLI for issue update/checkout (since REST PATCH
+ * doesn't work for issues by UUID).
  */
 
+import { execSync } from "node:child_process";
+
 const PAPERCLIP_URL = process.env.PAPERCLIP_URL || "http://localhost:3100";
+const PAPERCLIP_DATA_DIR = "/Volumes/Tai_SSD/dev/Projects/VanOffice/.paperclip-data";
 
 // Cache availability check for 30 seconds
 let availabilityCache: { result: boolean; expiry: number } | null = null;
@@ -64,11 +68,11 @@ export function resetAvailabilityCache() {
 
 export async function createCompany(
   name: string,
-  description: string,
+  mission: string,
 ): Promise<{ id: string }> {
   return paperclipFetch("/api/companies", {
     method: "POST",
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ name, mission }),
   });
 }
 
@@ -78,9 +82,9 @@ export async function createAgent(
   companyId: string,
   agent: {
     name: string;
-    role: string;
     title: string;
-    systemPrompt: string;
+    role?: string;
+    systemPrompt?: string;
     adapterType?: string;
     adapterConfig?: Record<string, unknown>;
   },
@@ -89,13 +93,89 @@ export async function createAgent(
     method: "POST",
     body: JSON.stringify({
       name: agent.name,
-      role: agent.role,
       title: agent.title,
+      role: agent.role,
       jobDescription: agent.systemPrompt,
       adapterType: agent.adapterType ?? "process",
       adapterConfig: agent.adapterConfig ?? {},
     }),
   });
+}
+
+export async function listAgents(
+  companyId: string,
+): Promise<Array<{ id: string; name: string; title?: string }>> {
+  return paperclipFetch(`/api/companies/${companyId}/agents`);
+}
+
+// ─── Issues (Tasks) ───
+
+export async function createIssue(
+  companyId: string,
+  issue: {
+    title: string;
+    body: string;
+    priority?: "low" | "medium" | "high" | "critical";
+    assigneeAgentId?: string;
+    dependencies?: string[];
+  },
+): Promise<{ id: string }> {
+  return paperclipFetch(`/api/companies/${companyId}/issues`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: issue.title,
+      body: issue.body,
+      priority: issue.priority ?? "medium",
+    }),
+  });
+}
+
+export async function listIssues(
+  companyId: string,
+): Promise<Array<{ id: string; title: string; status?: string }>> {
+  return paperclipFetch(`/api/companies/${companyId}/issues`);
+}
+
+/**
+ * Update an issue via CLI (REST PATCH doesn't work for issues by UUID).
+ */
+export function updateIssueCli(
+  issueId: string,
+  opts: {
+    assigneeAgentId?: string;
+    status?: "todo" | "in_progress" | "done";
+  },
+): void {
+  const args = ["paperclipai", "issue", "update", issueId];
+
+  if (opts.assigneeAgentId) {
+    args.push("--assignee-agent-id", opts.assigneeAgentId);
+  }
+  if (opts.status) {
+    args.push("--status", opts.status);
+  }
+
+  args.push("-d", PAPERCLIP_DATA_DIR);
+
+  console.log(`[paperclip-cli] ${args.join(" ")}`);
+  execSync(args.join(" "), { stdio: "pipe", timeout: 15_000 });
+}
+
+/**
+ * Checkout an issue for an agent via CLI.
+ */
+export function checkoutIssueCli(
+  issueId: string,
+  agentId: string,
+): void {
+  const args = [
+    "paperclipai", "issue", "checkout", issueId,
+    "--agent-id", agentId,
+    "-d", PAPERCLIP_DATA_DIR,
+  ];
+
+  console.log(`[paperclip-cli] ${args.join(" ")}`);
+  execSync(args.join(" "), { stdio: "pipe", timeout: 15_000 });
 }
 
 // ─── Provider → Paperclip adapter mapping ───
@@ -159,28 +239,6 @@ export function getAdapterConfigForProvider(providerId: string): {
     },
     envVars,
   };
-}
-
-// ─── Issues (Tasks) ───
-
-export async function createIssue(
-  companyId: string,
-  issue: {
-    title: string;
-    description: string;
-    assigneeId?: string;
-    dependencies?: string[];
-  },
-): Promise<{ id: string }> {
-  return paperclipFetch(`/api/companies/${companyId}/issues`, {
-    method: "POST",
-    body: JSON.stringify({
-      title: issue.title,
-      description: issue.description,
-      assigneeId: issue.assigneeId,
-      blockedBy: issue.dependencies,
-    }),
-  });
 }
 
 // ─── Goals ───

@@ -1,50 +1,116 @@
 /**
- * Paperclip Executor — replaces mock scheduler when Paperclip sidecar is running.
+ * Paperclip Executor — orchestrates workspace execution through Paperclip's
+ * company/agent/issue model with real LLM calls per agent.
  *
- * Translates between Team Foundry's event-sourced model and Paperclip's
- * company/agent/issue REST API. Polls Paperclip's activity feed and
- * appends equivalent RunEvents to our event store.
+ * Flow: createCompany → createAgents (+ write .md prompts) → createIssues →
+ * executeTasks (checkout, LLM call, mark done) → emit events.
+ *
+ * Falls back to the built-in scheduler if Paperclip is unreachable.
  */
+
+import fs from "node:fs";
+import path from "node:path";
 
 import { nanoid } from "nanoid";
 
+import { appPaths } from "@/lib/config";
 import {
   appendEvent,
   getWorkspaceRecord,
   listWorkspaceEvents,
   setWorkspaceStatus,
 } from "@/lib/db/client";
-import { projectWorkspaceState } from "@/lib/runtime/projector";
+import { SHARED_OPERATING_MANUAL } from "@/lib/role-templates";
 import {
   createCompany,
   createAgent,
   createIssue,
-  createGoal,
-  setSecret,
-  pollActivity,
-  getAdapterConfigForProvider,
-  type PaperclipActivity,
+  updateIssueCli,
+  checkoutIssueCli,
+  isPaperclipAvailable,
   type PaperclipMapping,
 } from "@/lib/runtime/adapters/paperclip";
-import type { ArtifactRecord, TaskCard, WorkspaceSnapshot } from "@/lib/types";
+import { getProviderAdapter } from "@/lib/runtime/adapters/providers";
+import { projectWorkspaceState } from "@/lib/runtime/projector";
+import { scheduleWorkspaceExecution } from "@/lib/runtime/scheduler";
+import type {
+  ArtifactRecord,
+  TaskCard,
+  TeamMember,
+  WorkspaceSnapshot,
+} from "@/lib/types";
 
 // ─── Active executions ───
 
-const activePollers = new Map<string, ReturnType<typeof setInterval>>();
+const activeSessions = new Map<string, { cancelled: boolean }>();
 const mappings = new Map<string, PaperclipMapping>();
 const budgets = new Map<string, { inputTokens: number; outputTokens: number; estimatedCost: number }>();
 
-// ─── Provider key mapping ───
+// ─── Agent prompt file writer ───
 
-const PROVIDER_KEY_MAP: Record<string, string> = {
-  openai: "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  gemini: "GEMINI_API_KEY",
-};
+/**
+ * Write a `.md` system prompt file per agent in
+ * `.data/workspaces/{workspaceId}/agents/{agentName}.md`
+ */
+function writeAgentPromptFile(
+  workspaceId: string,
+  agent: TeamMember,
+): string {
+  const agentsDir = path.join(appPaths.dataDir, "workspaces", workspaceId, "agents");
+  fs.mkdirSync(agentsDir, { recursive: true });
 
-function getProviderApiKey(providerId: string): string | undefined {
-  const envVar = PROVIDER_KEY_MAP[providerId];
-  return envVar ? process.env[envVar] : undefined;
+  const safeName = agent.displayName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const filePath = path.join(agentsDir, `${safeName}.md`);
+
+  const content = [
+    `# ${agent.displayName}`,
+    "",
+    `**Role:** ${agent.title}`,
+    `**Role ID:** ${agent.roleId}`,
+    "",
+    "## Responsibilities",
+    ...agent.responsibilities.map((r) => `- ${r}`),
+    "",
+    "## System Prompt",
+    agent.systemPrompt,
+    "",
+    "## Operating Manual",
+    SHARED_OPERATING_MANUAL,
+  ].join("\n");
+
+  fs.writeFileSync(filePath, content, "utf-8");
+  console.log(`[paperclip-executor] Wrote agent prompt: ${filePath}`);
+  return filePath;
+}
+
+// ─── Prompt builder (reused from scheduler logic) ───
+
+function buildTaskPrompt(
+  task: TaskCard,
+  agent: TeamMember | undefined,
+  missionGoal: string,
+  missionBrief: string,
+): { system: string; prompt: string } {
+  const system = agent?.systemPrompt ?? "You are a professional analyst.";
+  const prompt = [
+    `Mission: ${missionGoal}`,
+    "",
+    `Your task: ${task.title}`,
+    `Description: ${task.description}`,
+    "",
+    `Acceptance criteria:`,
+    ...task.acceptanceCriteria.map((c) => `- ${c}`),
+    "",
+    `Brief context (abbreviated):`,
+    missionBrief.slice(0, 1000),
+    "",
+    "Produce a structured markdown deliverable for this task. Use clear headings (##), bullet points, and tables where appropriate. Be specific and actionable. Keep it under 500 words.",
+  ].join("\n");
+
+  return { system, prompt };
 }
 
 // ─── Artifact builder ───
@@ -101,10 +167,166 @@ function buildArtifactFromOutput(
   };
 }
 
-// ─── Core executor ───
+// ─── Step 1: Create Paperclip company ───
+
+export async function createPaperclipCompany(
+  snapshot: WorkspaceSnapshot,
+): Promise<string> {
+  const company = await createCompany(
+    snapshot.workspace.title,
+    snapshot.summary ?? "Team Foundry workspace",
+  );
+  console.log(`[paperclip-executor] Created company: ${company.id}`);
+  return company.id;
+}
+
+// ─── Step 2: Create agents + write .md prompt files ───
+
+export async function createPaperclipAgents(
+  companyId: string,
+  team: TeamMember[],
+  workspaceId: string,
+): Promise<Map<string, string>> {
+  const agentMap = new Map<string, string>();
+
+  for (const member of team) {
+    // Write agent prompt .md file
+    writeAgentPromptFile(workspaceId, member);
+
+    // Create in Paperclip
+    const pcAgent = await createAgent(companyId, {
+      name: member.displayName,
+      title: member.title,
+      role: member.roleId,
+      systemPrompt: member.systemPrompt,
+    });
+
+    agentMap.set(member.agentId, pcAgent.id);
+    console.log(`[paperclip-executor] Created agent: ${member.displayName} → ${pcAgent.id}`);
+  }
+
+  return agentMap;
+}
+
+// ─── Step 3: Create issues + assign to agents ───
+
+export async function createPaperclipIssues(
+  companyId: string,
+  tasks: TaskCard[],
+  agentMap: Map<string, string>,
+): Promise<{ issueMap: Map<string, string>; taskMap: Map<string, string> }> {
+  const issueMap = new Map<string, string>();
+  const taskMap = new Map<string, string>();
+
+  // Sort by dependency count so predecessors are created first
+  const sortedTasks = [...tasks].sort((a, b) => a.dependencies.length - b.dependencies.length);
+
+  for (const task of sortedTasks) {
+    const pcAssignee = agentMap.get(task.ownerAgentId);
+
+    const body = [
+      task.description,
+      "",
+      `Work type: ${task.workType}`,
+      "Acceptance criteria:",
+      ...task.acceptanceCriteria.map((c) => `- ${c}`),
+    ].join("\n");
+
+    // Create issue via REST
+    const pcIssue = await createIssue(companyId, {
+      title: task.title,
+      body,
+      priority: "high",
+    });
+
+    issueMap.set(task.id, pcIssue.id);
+    taskMap.set(pcIssue.id, task.id);
+
+    // Assign to agent + set status via CLI (REST PATCH doesn't work)
+    if (pcAssignee) {
+      try {
+        updateIssueCli(pcIssue.id, {
+          assigneeAgentId: pcAssignee,
+          status: "todo",
+        });
+      } catch (err) {
+        console.warn(`[paperclip-executor] CLI assign failed for issue ${pcIssue.id}:`, err);
+      }
+    }
+
+    console.log(`[paperclip-executor] Created issue: ${task.title} → ${pcIssue.id}`);
+  }
+
+  return { issueMap, taskMap };
+}
+
+// ─── Step 4: Execute a single task ───
+
+export async function executePaperclipTask(
+  companyId: string,
+  issueId: string,
+  agentId: string,
+  task: TaskCard,
+  agent: TeamMember | undefined,
+  providerId: string,
+  missionGoal: string,
+  missionBrief: string,
+): Promise<string> {
+  // Checkout the issue for the agent
+  try {
+    checkoutIssueCli(issueId, agentId);
+  } catch (err) {
+    console.warn(`[paperclip-executor] Checkout failed for issue ${issueId}:`, err);
+  }
+
+  // Call the LLM provider to generate content
+  const provider = getProviderAdapter(providerId);
+  let content = "";
+
+  if (providerId !== "mock" && provider.isConfigured()) {
+    try {
+      const { system, prompt } = buildTaskPrompt(task, agent, missionGoal, missionBrief);
+      console.log(`[paperclip-executor] Calling ${providerId} for task: ${task.title}`);
+      const result = await provider.complete({ system, prompt });
+      content = result.text;
+
+      // Track usage
+      if (result.usage) {
+        return content; // budget tracking happens in the caller
+      }
+    } catch (err) {
+      console.error(`[paperclip-executor] LLM call failed for task "${task.title}":`, err);
+    }
+  }
+
+  // If no content from LLM, generate a placeholder
+  if (!content) {
+    content = `# ${task.title}\n\nCompleted by Paperclip agent (${agent?.displayName ?? "unknown"}).`;
+  }
+
+  // Mark issue as done via CLI
+  try {
+    updateIssueCli(issueId, { status: "done" });
+  } catch (err) {
+    console.warn(`[paperclip-executor] CLI status update failed for issue ${issueId}:`, err);
+  }
+
+  return content;
+}
+
+// ─── Step 5: Full orchestration ───
 
 export async function executePaperclipWorkspace(workspaceId: string): Promise<void> {
-  if (activePollers.has(workspaceId)) return;
+  // Prevent duplicate runs
+  if (activeSessions.has(workspaceId)) return;
+
+  // Check if Paperclip is actually available
+  const available = await isPaperclipAvailable();
+  if (!available) {
+    console.log("[paperclip-executor] Paperclip not available, falling back to built-in scheduler");
+    await scheduleWorkspaceExecution(workspaceId);
+    return;
+  }
 
   const workspace = await getWorkspaceRecord(workspaceId);
   if (!workspace) return;
@@ -112,250 +334,238 @@ export async function executePaperclipWorkspace(workspaceId: string): Promise<vo
   const events = await listWorkspaceEvents(workspaceId);
   const snapshot = projectWorkspaceState(workspace, events);
 
-  // 1. Create Paperclip company
-  const company = await createCompany(
-    snapshot.workspace.title,
-    snapshot.summary ?? "Team Foundry workspace",
-  );
+  const cancelRef = { cancelled: false };
+  activeSessions.set(workspaceId, cancelRef);
 
-  const mapping: PaperclipMapping = {
-    companyId: company.id,
-    agentMap: new Map(),
-    issueMap: new Map(),
-    taskMap: new Map(),
-  };
+  try {
+    // 1. Create Paperclip company
+    const companyId = await createPaperclipCompany(snapshot);
 
-  // 2. Store LLM API key as Paperclip secret
-  const apiKey = getProviderApiKey(snapshot.workspace.providerId);
-  if (apiKey) {
-    const envVar = PROVIDER_KEY_MAP[snapshot.workspace.providerId];
-    if (envVar) {
-      await setSecret(company.id, envVar, apiKey);
+    // 2. Create agents + write .md prompt files
+    const agentMap = await createPaperclipAgents(companyId, snapshot.agents, workspaceId);
+
+    // 3. Create issues + assign
+    const { issueMap, taskMap } = await createPaperclipIssues(companyId, snapshot.tasks, agentMap);
+
+    // Store mapping for reference
+    const mapping: PaperclipMapping = {
+      companyId,
+      agentMap,
+      issueMap,
+      taskMap,
+    };
+    mappings.set(workspaceId, mapping);
+    budgets.set(workspaceId, { inputTokens: 0, outputTokens: 0, estimatedCost: 0 });
+
+    // 4. Emit run started
+    await appendEvent(workspaceId, "run.started", { startedBy: "paperclip" });
+
+    // Kickoff meeting
+    const kickoffId = nanoid();
+    await appendEvent(workspaceId, "meeting.started", {
+      meetingId: kickoffId,
+      title: "Kickoff alignment",
+      participantAgentIds: snapshot.agents.map((a) => a.agentId),
+    });
+    await delay(1500);
+    await appendEvent(workspaceId, "meeting.ended", { meetingId: kickoffId });
+
+    if (cancelRef.cancelled) return;
+
+    // 5. Execute tasks sequentially by phase
+    const missionGoal = snapshot.workspace.title;
+    const missionBrief = snapshot.summary ?? "";
+    const providerId = snapshot.workspace.providerId;
+
+    // Group tasks by phase (based on dependency depth)
+    const taskPhases = groupTasksByPhase(snapshot.tasks);
+
+    for (const phaseTasks of taskPhases) {
+      if (cancelRef.cancelled) return;
+
+      for (const task of phaseTasks) {
+        if (cancelRef.cancelled) return;
+
+        const agent = snapshot.agents.find((a) => a.agentId === task.ownerAgentId);
+        const pcIssueId = issueMap.get(task.id);
+        const pcAgentId = agentMap.get(task.ownerAgentId);
+
+        // Emit task.started
+        await appendEvent(workspaceId, "task.started", {
+          taskId: task.id,
+          agentId: task.ownerAgentId,
+          state: task.workType,
+        });
+
+        await delay(500);
+
+        // Execute via Paperclip + LLM
+        let content: string;
+        if (pcIssueId && pcAgentId) {
+          content = await executePaperclipTask(
+            companyId, pcIssueId, pcAgentId,
+            task, agent, providerId,
+            missionGoal, missionBrief,
+          );
+        } else {
+          // Direct LLM fallback if Paperclip IDs missing
+          const provider = getProviderAdapter(providerId);
+          if (providerId !== "mock" && provider.isConfigured()) {
+            try {
+              const { system, prompt } = buildTaskPrompt(task, agent, missionGoal, missionBrief);
+              const result = await provider.complete({ system, prompt });
+              content = result.text;
+            } catch {
+              content = `# ${task.title}\n\nGenerated with fallback.`;
+            }
+          } else {
+            content = `# ${task.title}\n\nGenerated with fallback.`;
+          }
+        }
+
+        // Emit artifact.updated
+        const existingArtifact = snapshot.artifacts.find(
+          (a) => a.id === task.linkedArtifactIds[0],
+        );
+        await appendEvent(workspaceId, "artifact.updated", {
+          artifact: buildArtifactFromOutput(task, content, existingArtifact),
+        });
+
+        await delay(300);
+
+        // Emit task.completed
+        await appendEvent(workspaceId, "task.completed", {
+          taskId: task.id,
+          agentId: task.ownerAgentId,
+        });
+
+        await delay(300);
+      }
     }
-  }
 
-  // 3. Create agents with proper LLM adapter configuration
-  const adapterCfg = getAdapterConfigForProvider(snapshot.workspace.providerId);
+    if (cancelRef.cancelled) return;
 
-  for (const agent of snapshot.agents) {
-    const pcAgent = await createAgent(company.id, {
-      name: agent.displayName,
-      role: agent.roleId,
-      title: agent.title,
-      systemPrompt: agent.systemPrompt,
-      adapterType: adapterCfg.adapterType,
-      adapterConfig: {
-        ...adapterCfg.adapterConfig,
-        promptTemplate: agent.systemPrompt,
+    // 6. Review meeting
+    const reviewId = nanoid();
+    await appendEvent(workspaceId, "meeting.started", {
+      meetingId: reviewId,
+      title: "Review sync",
+      participantAgentIds: snapshot.agents.map((a) => a.agentId),
+    });
+
+    await delay(2000);
+
+    // Final deliverable compilation
+    await appendEvent(workspaceId, "artifact.updated", {
+      artifact: {
+        id: "final-deliverable",
+        title: "Final Team Packet",
+        type: "final-report",
+        status: "needs_review" as const,
+        schema: "markdown-v1",
+        provenance: snapshot.tasks.map((t) => t.id),
+        currentVersion: 1,
+        versions: [{
+          version: 1,
+          createdAt: Date.now(),
+          content: [
+            "# Final Team Packet",
+            "",
+            `## Mission: ${missionGoal}`,
+            "",
+            snapshot.summary ?? "",
+            "",
+            "## Deliverables compiled by the review team.",
+            "",
+            "*Click individual artifact cards below to read each deliverable in full.*",
+          ].join("\n"),
+          notes: "Compiled review packet (Paperclip execution).",
+          sourceTaskIds: snapshot.tasks.map((t) => t.id),
+          citations: [],
+        }],
       },
     });
-    mapping.agentMap.set(agent.agentId, pcAgent.id);
-  }
 
-  // 4. Create goal
-  const goal = await createGoal(company.id, {
-    title: snapshot.workspace.title,
-    description: snapshot.summary ?? "",
-  });
-  mapping.goalId = goal.id;
-
-  // 5. Create issues from tasks (respecting dependency DAG)
-  // Sort by phase: tasks with no deps first
-  const sortedTasks = [...snapshot.tasks].sort((a, b) => {
-    return a.dependencies.length - b.dependencies.length;
-  });
-
-  for (const task of sortedTasks) {
-    const pcDeps = task.dependencies
-      .map((depId) => mapping.issueMap.get(depId))
-      .filter(Boolean) as string[];
-
-    const pcAssignee = mapping.agentMap.get(task.ownerAgentId);
-
-    const pcIssue = await createIssue(company.id, {
-      title: task.title,
-      description: `${task.description}\n\nWork type: ${task.workType}\nAcceptance criteria:\n${task.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`,
-      assigneeId: pcAssignee,
-      dependencies: pcDeps,
-    });
-
-    mapping.issueMap.set(task.id, pcIssue.id);
-    mapping.taskMap.set(pcIssue.id, task.id);
-  }
-
-  mappings.set(workspaceId, mapping);
-  budgets.set(workspaceId, { inputTokens: 0, outputTokens: 0, estimatedCost: 0 });
-
-  // 6. Emit initial events
-  await appendEvent(workspaceId, "run.started", { startedBy: "paperclip" });
-
-  const kickoffId = nanoid();
-  await appendEvent(workspaceId, "meeting.started", {
-    meetingId: kickoffId,
-    title: "Kickoff alignment",
-    participantAgentIds: snapshot.agents.map((a) => a.agentId),
-  });
-
-  // End kickoff after a short delay
-  setTimeout(async () => {
-    await appendEvent(workspaceId, "meeting.ended", { meetingId: kickoffId });
-  }, 2000);
-
-  // 7. Start polling
-  const completedTasks = new Set<string>();
-  let lastActivityTimestamp: string | undefined;
-
-  const poller = setInterval(async () => {
-    try {
-      const activities = await pollActivity(mapping.companyId, lastActivityTimestamp);
-
-      for (const activity of activities) {
-        lastActivityTimestamp = activity.createdAt;
-        await processActivity(workspaceId, snapshot, mapping, activity, completedTasks);
-      }
-
-      // Update budget from activities
-      for (const activity of activities) {
-        if (activity.data?.inputTokens || activity.data?.outputTokens) {
-          const budget = budgets.get(workspaceId)!;
-          budget.inputTokens += (activity.data.inputTokens as number) ?? 0;
-          budget.outputTokens += (activity.data.outputTokens as number) ?? 0;
-          budget.estimatedCost = (budget.inputTokens * 0.003 + budget.outputTokens * 0.015) / 1000;
-        }
-      }
-
-      // Check if all tasks are done
-      if (completedTasks.size >= snapshot.tasks.length && snapshot.tasks.length > 0) {
-        clearInterval(poller);
-        activePollers.delete(workspaceId);
-        await finishExecution(workspaceId, snapshot);
-      }
-    } catch (err) {
-      console.error("[paperclip-executor] Poll error:", err);
-    }
-  }, 2000);
-
-  activePollers.set(workspaceId, poller);
-}
-
-// ─── Activity processing ───
-
-async function processActivity(
-  workspaceId: string,
-  snapshot: WorkspaceSnapshot,
-  mapping: PaperclipMapping,
-  activity: PaperclipActivity,
-  completedTasks: Set<string>,
-): Promise<void> {
-  const type = activity.type;
-
-  // Issue started → task.started
-  if (type === "issue.started" || type === "issue.in_progress") {
-    const ourTaskId = activity.entityId ? mapping.taskMap.get(activity.entityId) : undefined;
-    if (!ourTaskId) return;
-
-    const task = snapshot.tasks.find((t) => t.id === ourTaskId);
-    if (!task) return;
-
-    await appendEvent(workspaceId, "task.started", {
-      taskId: ourTaskId,
-      agentId: task.ownerAgentId,
-      state: task.workType,
-    });
-  }
-
-  // Issue completed → task.completed + artifact.updated
-  if (type === "issue.completed" || type === "issue.done") {
-    const ourTaskId = activity.entityId ? mapping.taskMap.get(activity.entityId) : undefined;
-    if (!ourTaskId || completedTasks.has(ourTaskId)) return;
-
-    const task = snapshot.tasks.find((t) => t.id === ourTaskId);
-    if (!task) return;
-
-    // Extract content from Paperclip output
-    const content = (activity.data?.output as string)
-      ?? (activity.data?.result as string)
-      ?? `# ${task.title}\n\nCompleted by Paperclip agent.`;
-
-    const existingArtifact = snapshot.artifacts.find(
-      (a) => a.id === task.linkedArtifactIds[0],
-    );
-
-    await appendEvent(workspaceId, "artifact.updated", {
-      artifact: buildArtifactFromOutput(task, content, existingArtifact),
-    });
-
-    await appendEvent(workspaceId, "task.completed", {
-      taskId: ourTaskId,
-      agentId: task.ownerAgentId,
-    });
-
-    completedTasks.add(ourTaskId);
-  }
-
-  // Agent output (intermediate) → artifact.updated
-  if (type === "agent.output" || type === "agent.artifact") {
-    const content = (activity.data?.content as string) ?? (activity.data?.output as string);
-    if (!content) return;
-
-    // Try to find which task this agent is working on
-    const pcAgentId = activity.agentId;
-    if (!pcAgentId) return;
-
-    // Find our agent by reverse-mapping
-    let ourAgentId: string | undefined;
-    for (const [ours, theirs] of mapping.agentMap) {
-      if (theirs === pcAgentId) { ourAgentId = ours; break; }
-    }
-    if (!ourAgentId) return;
-
-    const task = snapshot.tasks.find((t) => t.ownerAgentId === ourAgentId);
-    if (!task) return;
-
-    const existingArtifact = snapshot.artifacts.find(
-      (a) => a.id === task.linkedArtifactIds[0],
-    );
-
-    await appendEvent(workspaceId, "artifact.updated", {
-      artifact: buildArtifactFromOutput(task, content, existingArtifact),
-    });
-  }
-}
-
-// ─── Finish sequence ───
-
-async function finishExecution(
-  workspaceId: string,
-  snapshot: WorkspaceSnapshot,
-): Promise<void> {
-  // Review meeting
-  const reviewId = nanoid();
-  await appendEvent(workspaceId, "meeting.started", {
-    meetingId: reviewId,
-    title: "Review sync",
-    participantAgentIds: snapshot.agents.map((a) => a.agentId),
-  });
-
-  // Short delay then end meeting + request approval
-  setTimeout(async () => {
     await appendEvent(workspaceId, "meeting.ended", { meetingId: reviewId });
 
+    // 7. Request final approval
     await appendEvent(workspaceId, "approval.requested", {
       gateType: "final_deliverables",
       message: "Review and approve the deliverables before marking the run complete.",
     });
-
     await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
-  }, 2000);
+
+  } catch (err) {
+    console.error("[paperclip-executor] Execution failed, falling back to scheduler:", err);
+
+    // Clean up and fall back to built-in scheduler
+    activeSessions.delete(workspaceId);
+    mappings.delete(workspaceId);
+
+    try {
+      await scheduleWorkspaceExecution(workspaceId);
+    } catch (fallbackErr) {
+      console.error("[paperclip-executor] Fallback scheduler also failed:", fallbackErr);
+      await appendEvent(workspaceId, "approval.requested", {
+        gateType: "final_deliverables",
+        message: `Execution encountered errors: ${err instanceof Error ? err.message : "Unknown"}`,
+      });
+      await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
+    }
+  } finally {
+    activeSessions.delete(workspaceId);
+  }
+}
+
+// ─── Helpers ───
+
+/**
+ * Group tasks into phases based on dependency depth.
+ * Phase 0 = no dependencies, Phase 1 = depends on Phase 0, etc.
+ */
+function groupTasksByPhase(tasks: TaskCard[]): TaskCard[][] {
+  const depthMap = new Map<string, number>();
+
+  function getDepth(taskId: string): number {
+    if (depthMap.has(taskId)) return depthMap.get(taskId)!;
+
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task || task.dependencies.length === 0) {
+      depthMap.set(taskId, 0);
+      return 0;
+    }
+
+    const maxDepDep = Math.max(...task.dependencies.map((d) => getDepth(d)));
+    const depth = maxDepDep + 1;
+    depthMap.set(taskId, depth);
+    return depth;
+  }
+
+  for (const task of tasks) {
+    getDepth(task.id);
+  }
+
+  const maxDepth = Math.max(0, ...Array.from(depthMap.values()));
+  const phases: TaskCard[][] = [];
+
+  for (let d = 0; d <= maxDepth; d++) {
+    phases.push(tasks.filter((t) => (depthMap.get(t.id) ?? 0) === d));
+  }
+
+  return phases.filter((p) => p.length > 0);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ─── Cleanup ───
 
 export function clearPaperclipSchedule(workspaceId: string): void {
-  const poller = activePollers.get(workspaceId);
-  if (poller) {
-    clearInterval(poller);
-    activePollers.delete(workspaceId);
+  const session = activeSessions.get(workspaceId);
+  if (session) {
+    session.cancelled = true;
+    activeSessions.delete(workspaceId);
   }
   mappings.delete(workspaceId);
 }

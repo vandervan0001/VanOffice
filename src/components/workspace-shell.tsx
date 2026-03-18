@@ -193,13 +193,13 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
             Paperclip
           </span>
         )}
-        {paperclipStatus === "offline" && workspace.providerId !== "mock" && (
+        {paperclipStatus === "offline" && workspace.workspace.providerId !== "mock" && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--success)]/30 bg-[var(--success-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--success)]">
             <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
-            {workspace.providerId === "gemini" ? "Gemini" : workspace.providerId === "openai" ? "OpenAI" : workspace.providerId === "anthropic" ? "Anthropic" : workspace.providerId}
+            {workspace.workspace.providerId === "gemini" ? "Gemini" : workspace.workspace.providerId === "openai" ? "OpenAI" : workspace.workspace.providerId === "anthropic" ? "Anthropic" : workspace.workspace.providerId}
           </span>
         )}
-        {paperclipStatus === "offline" && workspace.providerId === "mock" && (
+        {paperclipStatus === "offline" && workspace.workspace.providerId === "mock" && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--attention)]/30 bg-[var(--attention-bg)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--attention)]">
             Mock mode
           </span>
