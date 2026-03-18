@@ -192,9 +192,9 @@ export const ollamaProvider: ProviderAdapter = {
 
 export const providerRegistry: ProviderAdapter[] = [
   mockProvider,
-  openAiProvider,
-  anthropicProvider,
   geminiProvider,
+  anthropicProvider,
+  openAiProvider,
   ollamaProvider,
 ];
 
