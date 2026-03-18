@@ -26,14 +26,18 @@ const AGENT_COLORS = [
   0x6a8abd, 0x4ad97a, 0xd96a8a, 0x8a6ad9, 0x7aba5a, 0xd9ba4a,
 ];
 
-const STATE_EMOJI: Record<AgentState, string> = {
-  idle: "",
-  writing: "\u{1f4bb}",
-  researching: "\u{1f50d}",
-  planning: "\u{1f4dd}",
-  waiting_for_approval: "\u23f3",
-  done: "\u2705",
-  meeting: "\u{1f4ac}",
+/* ------------------------------------------------------------------ */
+/*  Rich speech-bubble labels                                          */
+/* ------------------------------------------------------------------ */
+
+const STATE_BUBBLE: Record<AgentState, { emoji: string; text: string } | null> = {
+  idle: null,
+  writing: { emoji: "\u{1f4dd}", text: "Drafting report\u2026" },
+  researching: { emoji: "\u{1f50d}", text: "Gathering data\u2026" },
+  planning: { emoji: "\u{1f4cb}", text: "Framing mission\u2026" },
+  meeting: { emoji: "\u{1f4ac}", text: "In meeting" },
+  waiting_for_approval: { emoji: "\u23f3", text: "Waiting for review" },
+  done: { emoji: "\u2705", text: "Complete" },
 };
 
 /* ------------------------------------------------------------------ */
@@ -42,6 +46,8 @@ const STATE_EMOJI: Record<AgentState, string> = {
 
 const TILE = 16;
 const NUM_CHARS = 6; // char_0 .. char_5
+
+const BUBBLE_DISPLAY_MS = 8000;
 
 /* ------------------------------------------------------------------ */
 /*  React wrapper                                                      */
@@ -78,8 +84,10 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           {
             container: Phaser.GameObjects.Container;
             sprite: Phaser.GameObjects.Sprite;
+            shadow: Phaser.GameObjects.Ellipse;
             nameLabel: Phaser.GameObjects.Text;
-            emoteLabel: Phaser.GameObjects.Text;
+            bubble: Phaser.GameObjects.Text;
+            bubbleTimer: ReturnType<typeof setTimeout> | null;
             lastRow: number;
             lastCol: number;
             lastState: AgentState;
@@ -101,6 +109,20 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               frameHeight: 32,
             });
           }
+
+          // LPC Office tiles
+          this.load.image('desk', '/assets/tiles/Desk, Ornate.png');
+          this.load.image('laptop', '/assets/tiles/Laptop.png');
+          this.load.image('coffee-maker', '/assets/tiles/Coffee Maker.png');
+          this.load.image('coffee-cup', '/assets/tiles/Coffee Cup.png');
+          this.load.image('copy-machine', '/assets/tiles/Copy Machine.png');
+          this.load.image('water-cooler', '/assets/tiles/Water Cooler.png');
+          this.load.image('tv', '/assets/tiles/TV, Widescreen.png');
+          this.load.image('bins', '/assets/tiles/Bins.png');
+          this.load.image('portraits', '/assets/tiles/Office Portraits.png');
+
+          // Sound
+          this.load.audio('task-complete', '/assets/sounds/task-complete.wav');
         }
 
         /* ---------------------------------------------------------- */
@@ -130,16 +152,21 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
         }
 
         /* ---------------------------------------------------------- */
-        /*  Draw static office furniture/floors via Graphics           */
+        /*  Draw static office furniture/floors via Graphics + tiles   */
         /* ---------------------------------------------------------- */
 
         private drawOffice() {
           const g = this.add.graphics();
           const cfg = this.officeConfig;
 
-          // --- Floor ---
-          g.fillStyle(0xc8a878);
-          g.fillRect(0, 0, this.worldW, this.worldH);
+          // --- Floor with warm subtle checkerboard ---
+          for (let r = 0; r < cfg.rows; r++) {
+            for (let c = 0; c < cfg.cols; c++) {
+              const shade = (r + c) % 2 === 0 ? 0xc8a878 : 0xc4a474;
+              g.fillStyle(shade);
+              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+            }
+          }
 
           // Subtle grid
           g.lineStyle(0.5, 0x000000, 0.06);
@@ -170,25 +197,56 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             g.lineBetween(wx + TILE * 1.2, wy, wx + TILE * 1.2, wy + TILE * 1.4);
           }
 
-          // --- Desks ---
+          // --- Sunlight gradient overlay from windows ---
+          for (const c of winCols) {
+            const wx = c * TILE;
+            const wy = TILE * 2.5;
+            const sunG = this.add.graphics();
+            sunG.fillStyle(0xffe8a0, 0.06);
+            sunG.fillRect(wx - TILE * 0.5, wy, TILE * 3.4, TILE * 4);
+            sunG.fillStyle(0xffe8a0, 0.03);
+            sunG.fillRect(wx - TILE * 1, wy + TILE * 4, TILE * 4.4, TILE * 3);
+          }
+
+          // --- Office Portraits on back wall ---
+          try {
+            const portraitsX = 13 * TILE + TILE * 0.5;
+            const portraitsY = TILE * 0.8;
+            this.add.image(portraitsX, portraitsY, 'portraits')
+              .setOrigin(0.5, 0)
+              .setScale(0.5);
+          } catch { /* tile not loaded */ }
+
+          // --- Desks (LPC tile images) ---
           for (const desk of cfg.desks) {
             const dx = (desk.col - 1) * TILE;
             const dy = (desk.row - 1) * TILE;
-            // Desk surface
-            g.fillStyle(0x8b6b4a);
-            g.fillRect(dx, dy, TILE * 3, TILE * 1.8);
-            // Highlight edge
-            g.fillStyle(0xa0845c, 0.5);
-            g.fillRect(dx, dy, TILE * 3, 2);
-            // Monitor
-            g.fillStyle(0x2a2a3a);
-            g.fillRect(dx + TILE * 0.8, dy + TILE * 0.2, TILE * 1.4, TILE * 0.9);
-            // Screen glow
-            g.fillStyle(0x5588bb, 0.4);
-            g.fillRect(dx + TILE * 0.9, dy + TILE * 0.3, TILE * 1.2, TILE * 0.7);
-            // Monitor stand
-            g.fillStyle(0x2a2a3a);
-            g.fillRect(dx + TILE * 1.3, dy + TILE * 1.1, TILE * 0.4, TILE * 0.3);
+
+            // Place desk tile image centered on the desk area
+            try {
+              const deskImg = this.add.image(
+                dx + TILE * 1.5,
+                dy + TILE * 0.9,
+                'desk',
+              );
+              deskImg.setOrigin(0.5, 0.5);
+              deskImg.setScale(0.5);
+            } catch {
+              // Fallback: draw desk with graphics
+              g.fillStyle(0x8b6b4a);
+              g.fillRect(dx, dy, TILE * 3, TILE * 1.8);
+            }
+
+            // Laptop on desk
+            try {
+              this.add.image(dx + TILE * 0.7, dy + TILE * 0.35, 'laptop')
+                .setOrigin(0, 0)
+                .setScale(0.4);
+            } catch { /* tile not loaded */ }
+
+            // Monitor screen glow (colored rectangle over desk)
+            g.fillStyle(0x44aadd, 0.25);
+            g.fillRect(dx + TILE * 1.8, dy + TILE * 0.2, TILE * 0.8, TILE * 0.5);
           }
 
           // --- Meeting rooms ---
@@ -212,6 +270,13 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             g.fillRoundedRect(tx, ty, tw, th, 3);
             g.fillStyle(0x9a7a5a, 0.3);
             g.fillRect(tx + 2, ty + 2, tw - 4, 2);
+
+            // TV in meeting room
+            try {
+              this.add.image(rx + rw / 2, ry + 4, 'tv')
+                .setOrigin(0.5, 0)
+                .setScale(0.4);
+            } catch { /* tile not loaded */ }
           }
 
           // --- Break room ---
@@ -227,13 +292,32 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             g.lineStyle(0.8, 0x50a064, 0.15);
             g.strokeRect(bx, by, bw, bh);
 
-            // Coffee machine
-            g.fillStyle(0x6a4a3a);
-            g.fillRect(bx + TILE * 0.5, by + TILE * 0.4, TILE * 0.8, TILE * 1);
-            g.fillStyle(0xcc6644, 0.6);
-            g.fillRect(bx + TILE * 0.6, by + TILE * 0.5, TILE * 0.3, TILE * 0.3);
+            // Coffee maker (LPC tile)
+            try {
+              this.add.image(bx + TILE * 0.9, by + TILE * 0.6, 'coffee-maker')
+                .setOrigin(0.5, 0)
+                .setScale(0.45);
+            } catch {
+              // Fallback graphics
+              g.fillStyle(0x6a4a3a);
+              g.fillRect(bx + TILE * 0.5, by + TILE * 0.4, TILE * 0.8, TILE * 1);
+            }
 
-            // Couch
+            // Coffee cup on counter
+            try {
+              this.add.image(bx + TILE * 2, by + TILE * 0.8, 'coffee-cup')
+                .setOrigin(0.5, 0.5)
+                .setScale(0.4);
+            } catch { /* tile not loaded */ }
+
+            // Water cooler
+            try {
+              this.add.image(bx + TILE * 3, by + TILE * 0.5, 'water-cooler')
+                .setOrigin(0.5, 0)
+                .setScale(0.45);
+            } catch { /* tile not loaded */ }
+
+            // Couch (keep graphics — no specific LPC tile)
             g.fillStyle(0x6a7a9a);
             g.fillRoundedRect(
               bx + TILE * 3.5,
@@ -246,6 +330,18 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             g.fillRect(bx + TILE * 3.5, by + TILE * 1.5, TILE * 0.5, TILE * 1.2);
             g.fillRect(bx + TILE * 6, by + TILE * 1.5, TILE * 0.5, TILE * 1.2);
           }
+
+          // --- Copy machine & bins near break room ---
+          try {
+            const cmX = (cfg.breakRoom ? cfg.breakRoom.col + cfg.breakRoom.w + 1 : 10) * TILE;
+            const cmY = (cfg.breakRoom ? cfg.breakRoom.row : 10) * TILE + TILE * 0.5;
+            this.add.image(cmX, cmY, 'copy-machine')
+              .setOrigin(0, 0)
+              .setScale(0.45);
+            this.add.image(cmX + TILE * 2.5, cmY + TILE * 0.3, 'bins')
+              .setOrigin(0, 0)
+              .setScale(0.4);
+          } catch { /* tiles not loaded */ }
 
           // --- Plants (green circles) ---
           const plantSpots = [
@@ -299,51 +395,55 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
         }
 
         /* ---------------------------------------------------------- */
-        /*  Sprite animations                                          */
+        /*  Sprite animations (corrected frame layout)                 */
         /* ---------------------------------------------------------- */
 
         private createAnimations() {
           for (let i = 0; i < NUM_CHARS; i++) {
             const key = `char_${i}`;
 
-            // Row 0: walk down (frames 0-6), row 1: walk up (7-13), row 2: walk right (14-20)
-            // Idle = middle frame of each row
+            // Frames 0-2: walk down, 3-6: idle/extra down
+            // Frames 7-9: walk up, 10-13: idle/extra up
+            // Frames 14-16: walk right, 17-20: idle/extra right
+            // Walk-left: walk-right frames + flipX
+
             this.anims.create({
               key: `${key}_walk_down`,
-              frames: this.anims.generateFrameNumbers(key, { start: 0, end: 6 }),
+              frames: this.anims.generateFrameNumbers(key, { start: 0, end: 2 }),
               frameRate: 8,
               repeat: -1,
             });
 
             this.anims.create({
               key: `${key}_walk_up`,
-              frames: this.anims.generateFrameNumbers(key, { start: 7, end: 13 }),
+              frames: this.anims.generateFrameNumbers(key, { start: 7, end: 9 }),
               frameRate: 8,
               repeat: -1,
             });
 
             this.anims.create({
               key: `${key}_walk_right`,
-              frames: this.anims.generateFrameNumbers(key, { start: 14, end: 20 }),
+              frames: this.anims.generateFrameNumbers(key, { start: 14, end: 16 }),
               frameRate: 8,
               repeat: -1,
             });
 
+            // Idle frames: single static frame
             this.anims.create({
               key: `${key}_idle_down`,
-              frames: [{ key, frame: 3 }],
+              frames: [{ key, frame: 0 }],
               frameRate: 1,
             });
 
             this.anims.create({
               key: `${key}_idle_up`,
-              frames: [{ key, frame: 10 }],
+              frames: [{ key, frame: 7 }],
               frameRate: 1,
             });
 
             this.anims.create({
               key: `${key}_idle_right`,
-              frames: [{ key, frame: 17 }],
+              frames: [{ key, frame: 14 }],
               frameRate: 1,
             });
           }
@@ -367,7 +467,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               newCfg.rows !== this.officeConfig.rows
             ) {
               this.officeConfig = newCfg;
-              // Redraw would need clearing – for now keep same config after create
             }
           }
 
@@ -386,7 +485,11 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
 
             if (!existing) {
               // Create new agent
-              const sprite = this.add.sprite(0, 0, charKey, 3);
+              // Shadow ellipse under sprite
+              const shadow = this.add.ellipse(0, -1, 12, 4, 0x000000, 0.2);
+              shadow.setOrigin(0.5, 0.5);
+
+              const sprite = this.add.sprite(0, 0, charKey, 0);
               sprite.setOrigin(0.5, 1);
 
               const nameLabel = this.add.text(0, 2, agent.displayName, {
@@ -399,42 +502,87 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               });
               nameLabel.setOrigin(0.5, 0);
 
-              const emoji = STATE_EMOJI[agent.state] || "";
-              const emoteLabel = this.add.text(0, -34, emoji, {
-                fontSize: "9px",
+              // Rich speech bubble
+              const bubbleInfo = STATE_BUBBLE[agent.state];
+              const bubbleText = bubbleInfo
+                ? `${bubbleInfo.emoji} ${bubbleInfo.text}`
+                : "";
+              const bubble = this.add.text(0, -28, bubbleText, {
+                fontSize: "7px",
+                color: "#ffffff",
+                backgroundColor: bubbleText ? "#333333dd" : "transparent",
+                padding: { x: 4, y: 2 },
                 align: "center",
-                backgroundColor: emoji ? "rgba(255,255,255,0.85)" : undefined,
-                padding: { x: 2, y: 1 },
+                wordWrap: { width: 80 },
               });
-              emoteLabel.setOrigin(0.5, 1);
+              bubble.setOrigin(0.5, 1);
 
               const container = this.add.container(targetX, targetY, [
+                shadow,
                 sprite,
                 nameLabel,
-                emoteLabel,
+                bubble,
               ]);
               container.setDepth(pos.row);
+
+              // Auto-hide bubble after delay
+              let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
+              if (bubbleText) {
+                bubbleTimer = setTimeout(() => {
+                  bubble.setVisible(false);
+                }, BUBBLE_DISPLAY_MS);
+              }
 
               this.agentContainers.set(agent.agentId, {
                 container,
                 sprite,
+                shadow,
                 nameLabel,
-                emoteLabel,
+                bubble,
+                bubbleTimer,
                 lastRow: pos.row,
                 lastCol: pos.col,
                 lastState: agent.state,
               });
             } else {
               // Update existing agent
-              const { container, sprite, emoteLabel } = existing;
+              const { container, sprite, bubble } = existing;
 
-              // Update emote if state changed
+              // Update bubble if state changed
               if (existing.lastState !== agent.state) {
-                const emoji = STATE_EMOJI[agent.state] || "";
-                emoteLabel.setText(emoji);
-                emoteLabel.setBackgroundColor(
-                  emoji ? "rgba(255,255,255,0.85)" : "transparent",
+                // Play sound on task completion
+                if (
+                  agent.state === "done" ||
+                  agent.state === "waiting_for_approval"
+                ) {
+                  try {
+                    this.sound.play("task-complete", { volume: 0.3 });
+                  } catch {
+                    /* sound may not be loaded */
+                  }
+                }
+
+                const bubbleInfo = STATE_BUBBLE[agent.state];
+                const bubbleText = bubbleInfo
+                  ? `${bubbleInfo.emoji} ${bubbleInfo.text}`
+                  : "";
+                bubble.setText(bubbleText);
+                bubble.setBackgroundColor(
+                  bubbleText ? "#333333dd" : "transparent",
                 );
+                bubble.setVisible(!!bubbleText);
+
+                // Reset auto-hide timer
+                if (existing.bubbleTimer) {
+                  clearTimeout(existing.bubbleTimer);
+                  existing.bubbleTimer = null;
+                }
+                if (bubbleText) {
+                  existing.bubbleTimer = setTimeout(() => {
+                    bubble.setVisible(false);
+                  }, BUBBLE_DISPLAY_MS);
+                }
+
                 existing.lastState = agent.state;
               }
 
@@ -445,18 +593,16 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
 
                 // Determine walk direction
                 let walkDir: "down" | "up" | "right" = "down";
+                let isLeft = false;
                 if (Math.abs(dy) > Math.abs(dx)) {
                   walkDir = dy > 0 ? "down" : "up";
                 } else {
                   walkDir = "right";
+                  isLeft = dx < 0;
                 }
 
                 // Flip sprite for left movement
-                if (dx < 0 && walkDir === "right") {
-                  sprite.setFlipX(true);
-                } else {
-                  sprite.setFlipX(false);
-                }
+                sprite.setFlipX(isLeft);
 
                 sprite.play(`${charKey}_walk_${walkDir}`);
 
@@ -467,8 +613,11 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
                   duration: 600,
                   ease: "Sine.easeInOut",
                   onComplete: () => {
-                    sprite.play(`${charKey}_idle_down`);
-                    sprite.setFlipX(false);
+                    // Stop walk and show idle frame facing arrival direction
+                    sprite.play(`${charKey}_idle_${walkDir}`);
+                    if (walkDir !== "right") {
+                      sprite.setFlipX(false);
+                    }
                   },
                 });
 
@@ -482,6 +631,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           // Remove agents no longer in snapshot
           for (const [id, entry] of this.agentContainers) {
             if (!seen.has(id)) {
+              if (entry.bubbleTimer) clearTimeout(entry.bubbleTimer);
               entry.container.destroy();
               this.agentContainers.delete(id);
             }
