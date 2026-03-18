@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 
+import { OfficeView } from "@/components/office/office-view";
+import { MissionComposer } from "@/components/composer/mission-composer";
+import { ApprovalSidebar } from "@/components/sidebar/approval-sidebar";
+import { ArtifactPanel } from "@/components/outputs/artifact-panel";
 import type { ProviderAdapter, WorkspaceSnapshot } from "@/lib/types";
 
 interface WorkspaceShellProps {
@@ -73,25 +77,13 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
       .catch((e) => setError(e instanceof Error ? e.message : "Load failed"));
   }
 
-  // Before workspace exists: show empty office with composer overlay
+  // Pre-workspace: empty office with composer overlay
   if (!workspace) {
     return (
       <main className="min-h-screen bg-[var(--background)]">
         <div className="relative mx-auto max-w-[1200px] px-4 py-8">
-          {/* Empty office placeholder — replaced by OfficeView in Task 7 */}
-          <div className="flex h-[448px] items-center justify-center rounded-xl bg-[#f0ebe3]">
-            <span className="text-sm text-[var(--text-secondary)]">
-              Office loading...
-            </span>
-          </div>
-          {/* Composer overlay — replaced by MissionComposer in Task 8 */}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="rounded-xl bg-white/90 p-8 shadow-sm backdrop-blur">
-              <p className="text-[var(--text-secondary)]">
-                Composer placeholder — Task 8
-              </p>
-            </div>
-          </div>
+          <OfficeView snapshot={null} />
+          <MissionComposer providers={providers} onCreated={handleCreated} />
         </div>
         {error && (
           <div className="mx-auto max-w-[1200px] px-4">
@@ -104,86 +96,34 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
     );
   }
 
-  // L-shaped layout: office + outputs left, sidebar right
+  // Active workspace: L-shaped layout
   return (
     <main className="min-h-screen bg-[var(--background)]">
       <div
         className="workspace-grid mx-auto grid max-w-[1200px] gap-4 px-4 py-8"
         style={{
           gridTemplateColumns: "1fr 250px",
-          gridTemplateRows: "auto 1fr",
+          gridTemplateRows: "auto auto",
         }}
       >
         {/* Top-left: Pixel Office */}
-        <section
-          className="rounded-xl bg-[#f0ebe3]"
-          style={{ gridColumn: "1", gridRow: "1" }}
-        >
-          <div className="flex h-[448px] items-center justify-center">
-            <span className="text-sm text-[var(--text-secondary)]">
-              Office View — Task 7
-            </span>
-          </div>
+        <section style={{ gridColumn: "1", gridRow: "1" }}>
+          <OfficeView snapshot={workspace} />
         </section>
 
         {/* Right sidebar (spans both rows) */}
-        <aside
-          className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4"
-          style={{ gridColumn: "2", gridRow: "1 / -1" }}
-        >
-          {/* Approval gates placeholder */}
-          <p className="text-xs uppercase tracking-widest text-[var(--text-secondary)]">
-            Validations
-          </p>
-          <div className="mt-3 space-y-3">
-            {workspace.approvals.map((gate) => (
-              <div
-                key={gate.gateType}
-                className="rounded-xl border border-[var(--border)] p-3"
-              >
-                <p className="text-sm font-medium">
-                  {gate.gateType.replaceAll("_", " ")}
-                </p>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  {gate.status}
-                </p>
-                {gate.status === "pending" && (
-                  <button
-                    type="button"
-                    onClick={() => approve(gate.gateType)}
-                    disabled={busyGate === gate.gateType}
-                    className="mt-2 rounded-lg bg-[var(--success)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                  >
-                    {busyGate === gate.gateType ? "..." : "Valider"}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </aside>
+        <div style={{ gridColumn: "2", gridRow: "1 / -1" }}>
+          <ApprovalSidebar
+            snapshot={workspace}
+            busyGate={busyGate}
+            onApprove={approve}
+          />
+        </div>
 
-        {/* Bottom-left: Outputs */}
-        <section
-          className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4"
-          style={{ gridColumn: "1", gridRow: "2" }}
-        >
-          <p className="text-xs uppercase tracking-widest text-[var(--text-secondary)]">
-            Livrables
-          </p>
-          <div className="mt-3 flex gap-3 overflow-x-auto">
-            {workspace.artifacts.map((artifact) => (
-              <div
-                key={artifact.id}
-                className="min-w-[200px] rounded-xl border border-[var(--border)] p-3"
-              >
-                <p className="text-sm font-medium">{artifact.title}</p>
-                <span className="text-xs text-[var(--text-secondary)]">
-                  {artifact.status} · v{artifact.currentVersion}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* Bottom-left: Artifacts */}
+        <div style={{ gridColumn: "1", gridRow: "2" }}>
+          <ArtifactPanel artifacts={workspace.artifacts} />
+        </div>
       </div>
 
       {error && (
