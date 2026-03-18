@@ -193,11 +193,24 @@ export async function createPaperclipAgents(
     // Write agent prompt .md file
     writeAgentPromptFile(workspaceId, member);
 
+    // Map our custom roleIds to Paperclip's fixed enum
+    const PAPERCLIP_ROLE_MAP: Record<string, string> = {
+      "mission-planner": "pm",
+      "editor-reviewer": "qa",
+      "cfo-advisor": "cfo",
+      "cto-advisor": "cto",
+      "legal-counsel": "researcher",
+      "growth-advisor": "cmo",
+      "sales-director": "cmo",
+      "security-auditor": "engineer",
+    };
+    const pcRole = PAPERCLIP_ROLE_MAP[member.roleId] ?? "general";
+
     // Create in Paperclip
     const pcAgent = await createAgent(companyId, {
       name: member.displayName,
       title: member.title,
-      role: member.roleId,
+      role: pcRole,
       systemPrompt: member.systemPrompt,
     });
 
