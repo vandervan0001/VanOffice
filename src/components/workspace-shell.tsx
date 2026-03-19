@@ -305,10 +305,10 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         )}
       </div>
 
-      <div className="mx-auto flex h-[calc(100%-2.5rem)] max-w-[1600px] gap-4">
+      <div className="mx-auto flex h-[calc(100%-2.5rem)] max-w-[1600px] gap-3">
         {/* LEFT COLUMN: office + deliverables */}
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div className="min-h-[400px] flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
+        <div className="flex flex-[3] flex-col gap-3">
+          <div className="min-h-[350px] flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
             <PhaserOffice snapshot={workspace} />
           </div>
           <div className="shrink-0">
@@ -317,7 +317,7 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         </div>
 
         {/* RIGHT COLUMN: validations card + chatbox card */}
-        <div className="flex w-[400px] shrink-0 flex-col gap-4">
+        <div className="flex flex-[1] min-w-[300px] max-w-[380px] flex-col gap-3">
           <div className="flex-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <ApprovalSidebar
               snapshot={workspace}
