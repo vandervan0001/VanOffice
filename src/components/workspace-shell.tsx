@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import dynamic from "next/dynamic";
 import { MissionComposer } from "@/components/composer/mission-composer";
-import { ApprovalSidebar } from "@/components/sidebar/approval-sidebar";
+import { ValidationBar } from "@/components/sidebar/validation-bar";
 import { ArtifactPanel } from "@/components/outputs/artifact-panel";
 import { CommandInput } from "@/components/sidebar/command-input";
 import type { ProviderAdapter, WorkspaceSnapshot, WorkspaceStatus } from "@/lib/types";
@@ -305,22 +305,26 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         )}
       </div>
 
-      {/* Office + Sidebar — fixed height, fills viewport */}
+      {/* Office + Right panel — 50/50 layout */}
       <div className="mx-auto flex max-w-[1600px] gap-3" style={{ height: "calc(100vh - 80px)" }}>
-        {/* Office canvas — takes most of the space */}
-        <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
+        {/* LEFT: Office */}
+        <div className="w-1/2 overflow-hidden rounded-xl border border-[var(--border)]">
           <CanvasOffice snapshot={workspace} />
         </div>
-        {/* Sidebar: validations + orders */}
-        <div className="flex w-[320px] shrink-0 flex-col gap-3">
-          <div className="flex-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <ApprovalSidebar
-              snapshot={workspace}
-              busyGate={busyGate}
-              onApprove={approve}
-            />
-          </div>
-          <div className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+
+        {/* RIGHT: Validation bar + Chat + Orders */}
+        <div className="flex w-1/2 flex-col gap-3">
+          {/* Compact validation bar */}
+          <ValidationBar
+            approvals={workspace.approvals}
+            busyGate={busyGate}
+            onApprove={(gateType) => approve(gateType)}
+            teamProposal={workspace.teamProposal ?? undefined}
+            tasks={workspace.tasks}
+          />
+
+          {/* Chat area — takes remaining space */}
+          <div className="flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <CommandInput
               suggestions={suggestions}
               workspaceId={workspaceId}

@@ -8,6 +8,13 @@ interface ChatMessage {
   text: string;
 }
 
+const WELCOME_SUGGESTIONS = [
+  "Analyse our competitive positioning in the European market",
+  "Draft a SWOT analysis for our product",
+  "What are the key risks we should address first?",
+  "Summarize your findings so far",
+];
+
 interface CommandInputProps {
   suggestions?: string[];
   workspaceId?: string;
@@ -84,17 +91,21 @@ export function CommandInput({
           return;
         }
 
-        // Concatenate all artifact content into one markdown string
         const markdown = artifacts
-          .map((a: { title: string; currentVersion: number; versions: Array<{ version: number; content: string }> }) => {
-            const version = a.versions.find(
-              (v: { version: number }) => v.version === a.currentVersion,
-            );
-            return `# ${a.title}\n\n${version?.content ?? "(no content)"}\n\n---\n`;
-          })
+          .map(
+            (a: {
+              title: string;
+              currentVersion: number;
+              versions: Array<{ version: number; content: string }>;
+            }) => {
+              const version = a.versions.find(
+                (v: { version: number }) => v.version === a.currentVersion,
+              );
+              return `# ${a.title}\n\n${version?.content ?? "(no content)"}\n\n---\n`;
+            },
+          )
           .join("\n");
 
-        // Trigger browser download
         const blob = new Blob([markdown], { type: "text/markdown" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -105,7 +116,9 @@ export function CommandInput({
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
 
-        addSystemMessage(`Exported ${artifacts.length} deliverable(s) as markdown.`);
+        addSystemMessage(
+          `Exported ${artifacts.length} deliverable(s) as markdown.`,
+        );
       } catch (err) {
         addSystemMessage(
           `Export failed: ${err instanceof Error ? err.message : "Unknown error"}`,
@@ -148,13 +161,14 @@ export function CommandInput({
         if (!res.ok) throw new Error("Failed to fetch workspace");
         const snapshot = await res.json();
         const missionGoal = snapshot.workspace?.title ?? "Previous mission";
-        // Navigate to composer by removing workspace param and adding a follow-up hint
         const url = new URL(window.location.href);
         url.searchParams.delete("workspace");
         url.searchParams.set("followUp", missionGoal);
         window.location.href = url.toString();
       } catch {
-        addSystemMessage("Could not start follow-up. Try creating a new workspace manually.");
+        addSystemMessage(
+          "Could not start follow-up. Try creating a new workspace manually.",
+        );
       }
       return;
     }
@@ -200,7 +214,6 @@ export function CommandInput({
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    // Check if it matches a known suggestion
     const matchedSuggestion = suggestions.find(
       (s) => s.toLowerCase() === trimmed.toLowerCase(),
     );
@@ -210,7 +223,6 @@ export function CommandInput({
       return;
     }
 
-    // Custom message
     addUserMessage(trimmed);
     handleCustomCommand(trimmed);
     setInputValue("");
@@ -223,23 +235,63 @@ export function CommandInput({
     }
   }
 
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-xs uppercase tracking-widest text-[var(--text-secondary)]">
-        Orders
-      </p>
+  const showWelcome = messages.length === 0;
 
-      {/* Suggestion pills */}
-      {suggestions.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+  return (
+    <div className="flex h-full flex-col">
+      {/* Chat messages area — takes most of the space */}
+      <div className="flex-1 overflow-y-auto p-1">
+        {showWelcome ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4 px-4 text-center">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Your team is ready! Try asking them something:
+            </p>
+            <div className="flex flex-col gap-2 w-full max-w-sm">
+              {WELCOME_SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => handleSuggestion(s)}
+                  disabled={busy}
+                  className="rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-left text-xs text-[var(--text-secondary)] transition hover:border-[var(--success)]/50 hover:bg-[var(--success-bg)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {messages.map((msg) => (
+              <div
+                key={msg.id}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <div
+                  className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                    msg.role === "user"
+                      ? "bg-[var(--success-bg)] text-[var(--foreground)]"
+                      : "bg-[var(--border)]/50 text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Suggestion pills — above the input */}
+      {suggestions.length > 0 && !showWelcome && (
+        <div className="flex flex-wrap gap-1.5 px-1 pb-2">
           {suggestions.map((suggestion) => (
             <button
               key={suggestion}
               type="button"
               disabled={busy}
-              onClick={() => {
-                handleSuggestion(suggestion);
-              }}
+              onClick={() => handleSuggestion(suggestion)}
               className="rounded-full border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition hover:border-[var(--success)]/50 hover:bg-[var(--success-bg)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
             >
               {suggestion}
@@ -248,31 +300,8 @@ export function CommandInput({
         </div>
       )}
 
-      {/* Chat messages */}
-      {messages.length > 0 && (
-        <div className="flex max-h-[240px] flex-col gap-1.5 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--background)] p-2">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-xl px-3 py-1.5 text-xs leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-[var(--success-bg)] text-[var(--foreground)]"
-                    : "bg-[var(--border)]/50 text-[var(--text-secondary)]"
-                }`}
-              >
-                {msg.text}
-              </div>
-            </div>
-          ))}
-          <div ref={chatEndRef} />
-        </div>
-      )}
-
-      {/* Input */}
-      <div className="flex gap-2">
+      {/* Input at the bottom */}
+      <div className="flex gap-2 border-t border-[var(--border)] pt-3">
         <input
           type="text"
           value={inputValue}
@@ -280,13 +309,13 @@ export function CommandInput({
           onKeyDown={handleKeyDown}
           disabled={busy}
           placeholder="Give an instruction to the team..."
-          className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--text-muted)] focus:border-[var(--success)]/50 focus:outline-none disabled:opacity-50"
+          className="w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--text-muted)] focus:border-[var(--success)]/50 focus:outline-none disabled:opacity-50"
         />
         <button
           type="button"
           onClick={() => handleSend(inputValue)}
           disabled={!inputValue.trim() || busy}
-          className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-secondary)] transition hover:border-[var(--success)]/50 hover:bg-[var(--success-bg)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+          className="shrink-0 rounded-xl bg-[var(--success)] px-4 py-2.5 text-xs font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? "..." : "Send"}
         </button>
