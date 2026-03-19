@@ -43,7 +43,7 @@ const STATE_BUBBLE: Record<AgentState, { emoji: string; text: string } | null> =
 };
 
 /* ------------------------------------------------------------------ */
-/*  Tile size used by Phaser (half the HTML office's 32 px)            */
+/*  Tile size                                                          */
 /* ------------------------------------------------------------------ */
 
 const TILE = 32;
@@ -69,7 +69,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
     let destroyed = false;
 
     // Wait for the container to have real dimensions before booting Phaser.
-    // Flex layouts can report 0 width at mount time.
     const el = containerRef.current;
     const waitForSize = new Promise<void>((resolve) => {
       if (el.clientWidth > 0 && el.clientHeight > 0) { resolve(); return; }
@@ -83,7 +82,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
         }
       });
       ro.observe(el);
-      // Safety timeout — boot anyway after 2s
       setTimeout(() => { ro.disconnect(); resolve(); }, 2000);
     });
 
@@ -102,6 +100,12 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
         /* collision map for A* pathfinding */
         private collisionBlocked: Set<string> = new Set();
 
+        /**
+         * Occupied grid: true means a furniture item is rendered there.
+         * Used during drawOffice to prevent visual overlaps.
+         */
+        private occupied: boolean[][] = [];
+
         /* per-agent runtime */
         private agentContainers: Map<
           string,
@@ -115,9 +119,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             lastRow: number;
             lastCol: number;
             lastState: AgentState;
-            /** True while a step-by-step walk tween chain is running. */
             walking: boolean;
-            /** The final destination (row,col) the agent is heading to. */
             goalRow: number;
             goalCol: number;
           }
@@ -139,7 +141,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             });
           }
 
-          // LPC Office tiles
           this.load.image('desk', '/assets/tiles/Desk, Ornate.png');
           this.load.image('laptop', '/assets/tiles/Laptop.png');
           this.load.image('coffee-maker', '/assets/tiles/Coffee Maker.png');
@@ -150,7 +151,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           this.load.image('bins', '/assets/tiles/Bins.png');
           this.load.image('portraits', '/assets/tiles/Office Portraits.png');
 
-          // Sound
           this.load.audio('task-complete', '/assets/sounds/task-complete.wav');
         }
 
@@ -163,6 +163,12 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           this.officeConfig = generateOfficeConfig(Math.max(teamSize, 4));
           this.worldW = this.officeConfig.cols * TILE;
           this.worldH = this.officeConfig.rows * TILE;
+
+          // Init occupied grid
+          this.occupied = [];
+          for (let r = 0; r < this.officeConfig.rows; r++) {
+            this.occupied[r] = new Array(this.officeConfig.cols).fill(false);
+          }
 
           this.drawOffice();
           this.createAnimations();
@@ -182,14 +188,43 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
         }
 
         /* ---------------------------------------------------------- */
-        /*  Draw static office furniture/floors via Graphics + tiles   */
+        /*  Occupancy helpers                                          */
+        /* ---------------------------------------------------------- */
+
+        /** Check if a rectangular region of cells is free. */
+        private isFree(row: number, col: number, h: number, w: number): boolean {
+          for (let r = row; r < row + h; r++) {
+            for (let c = col; c < col + w; c++) {
+              if (r < 0 || r >= this.officeConfig.rows) return false;
+              if (c < 0 || c >= this.officeConfig.cols) return false;
+              if (this.occupied[r][c]) return false;
+            }
+          }
+          return true;
+        }
+
+        /** Mark a rectangular region as occupied. */
+        private markOccupied(row: number, col: number, h: number, w: number) {
+          for (let r = row; r < row + h; r++) {
+            for (let c = col; c < col + w; c++) {
+              if (r >= 0 && r < this.officeConfig.rows && c >= 0 && c < this.officeConfig.cols) {
+                this.occupied[r][c] = true;
+              }
+            }
+          }
+        }
+
+        /* ---------------------------------------------------------- */
+        /*  Draw static office: floors -> walls -> furniture -> labels */
         /* ---------------------------------------------------------- */
 
         private drawOffice() {
           const g = this.add.graphics();
           const cfg = this.officeConfig;
 
-          // --- Floor with warm subtle checkerboard ---
+          // ========== LAYER 1: FLOORS ==========
+
+          // Main floor — warm checkerboard
           for (let r = 0; r < cfg.rows; r++) {
             for (let c = 0; c < cfg.cols; c++) {
               const shade = (r + c) % 2 === 0 ? 0xc8a878 : 0xc4a474;
@@ -198,7 +233,54 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             }
           }
 
-          // Subtle grid
+          // Back wall area (rows 0-2)
+          for (let r = 0; r < 3; r++) {
+            for (let c = 0; c < cfg.cols; c++) {
+              g.fillStyle(0xf2e4d0);
+              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+              this.occupied[r][c] = true;
+            }
+          }
+
+          // Room floors (tint over base)
+          this.drawRoomFloor(g, cfg.bossOffice, 0xc49a6c, 0xc0966a);
+          this.drawRoomFloor(g, cfg.serverRoom, 0x3a3a4a, 0x38384a);
+          this.drawRoomFloor(g, cfg.archives, 0xb8a080, 0xb49c7c);
+          this.drawRoomFloor(g, cfg.lounge, 0xc8a878, 0xc4a474);
+          this.drawRoomFloor(g, cfg.restrooms, 0xaaaaaa, 0xa6a6a6);
+
+          // Meeting room floor tint
+          for (const room of cfg.meetingRooms) {
+            for (let r = room.row; r < room.row + room.h; r++) {
+              for (let c = room.col; c < room.col + room.w; c++) {
+                g.fillStyle(0xa08264, 0.15);
+                g.fillRect(c * TILE, r * TILE, TILE, TILE);
+              }
+            }
+          }
+
+          // Break room floor tint
+          if (cfg.breakRoom) {
+            const br = cfg.breakRoom;
+            for (let r = br.row; r < br.row + br.h; r++) {
+              for (let c = br.col; c < br.col + br.w; c++) {
+                g.fillStyle(0x78b48c, 0.12);
+                g.fillRect(c * TILE, r * TILE, TILE, TILE);
+              }
+            }
+          }
+
+          // Hallway floor
+          if (cfg.hallway) {
+            const hw = cfg.hallway;
+            for (let r = hw.row; r < hw.row + hw.h; r++) {
+              const shade = (r + hw.col) % 2 === 0 ? 0xc8a878 : 0xc4a474;
+              g.fillStyle(shade);
+              g.fillRect(hw.col * TILE, r * TILE, hw.w * TILE, TILE);
+            }
+          }
+
+          // Subtle grid lines
           g.lineStyle(0.5, 0x000000, 0.06);
           for (let x = 0; x <= this.worldW; x += TILE) {
             g.lineBetween(x, 0, x, this.worldH);
@@ -207,246 +289,112 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             g.lineBetween(0, y, this.worldW, y);
           }
 
-          // --- Back wall ---
-          g.fillStyle(0xf2e4d0);
-          g.fillRect(0, 0, this.worldW, TILE * 2.5);
-          // Baseboard
+          // ========== LAYER 2: WALLS ==========
+
+          // Back wall baseboard
           g.fillStyle(0xa07840, 0.55);
-          g.fillRect(0, TILE * 2.5, this.worldW, 2);
+          g.fillRect(0, 2 * TILE + TILE - 2, this.worldW, 2);
 
-          // --- Windows on wall ---
-          const winCols = [1, 6, 11, 16, 21];
+          // Windows on back wall (at row 0, spanning 2 cells wide)
+          const winCols = [1, 4, 7, 10, 17, 20, 23];
           for (const c of winCols) {
-            const wx = c * TILE;
-            const wy = TILE * 0.4;
+            if (c + 2 > cfg.cols) continue;
             g.fillStyle(0xa8d8ea, 0.6);
-            g.fillRect(wx, wy, TILE * 2.4, TILE * 1.4);
+            g.fillRect(c * TILE, 0, 2 * TILE, TILE);
             g.lineStyle(1, 0x8ab8ca, 0.8);
-            g.strokeRect(wx, wy, TILE * 2.4, TILE * 1.4);
+            g.strokeRect(c * TILE, 0, 2 * TILE, TILE);
             // Mullion
-            g.lineBetween(wx + TILE * 1.2, wy, wx + TILE * 1.2, wy + TILE * 1.4);
+            g.lineBetween(c * TILE + TILE, 0, c * TILE + TILE, TILE);
           }
 
-          // --- Sunlight gradient overlay from windows ---
-          for (const c of winCols) {
-            const wx = c * TILE;
-            const wy = TILE * 2.5;
-            const sunG = this.add.graphics();
-            sunG.fillStyle(0xffe8a0, 0.06);
-            sunG.fillRect(wx - TILE * 0.5, wy, TILE * 3.4, TILE * 4);
-            sunG.fillStyle(0xffe8a0, 0.03);
-            sunG.fillRect(wx - TILE * 1, wy + TILE * 4, TILE * 4.4, TILE * 3);
-          }
+          // Room walls (right-side rooms)
+          this.drawRoomWalls(g, cfg.bossOffice, "left");
+          this.drawRoomWalls(g, cfg.serverRoom, "left");
+          this.drawRoomWalls(g, cfg.archives, "left");
+          this.drawRoomWalls(g, cfg.lounge, "left");
+          this.drawRoomWalls(g, cfg.restrooms, "left");
 
-          // --- Office Portraits on back wall ---
-          try {
-            const portraitsX = 13 * TILE + TILE * 0.5;
-            const portraitsY = TILE * 0.8;
-            this.add.image(portraitsX, portraitsY, 'portraits')
-              .setOrigin(0.5, 0)
-              .setScale(0.5);
-          } catch { /* tile not loaded */ }
-
-          // --- Desks (LPC tile images) ---
-          for (const desk of cfg.desks) {
-            const dx = desk.col * TILE;
-            const dy = desk.row * TILE;
-
-            // Place desk tile image centered on the desk area
-            try {
-              const deskImg = this.add.image(
-                dx + TILE * 1.5,
-                dy + TILE * 0.9,
-                'desk',
-              );
-              deskImg.setOrigin(0.5, 0.5);
-              deskImg.setScale(0.5);
-            } catch {
-              // Fallback: draw desk with graphics
-              g.fillStyle(0x8b6b4a);
-              g.fillRect(dx, dy, TILE * 3, TILE * 1.8);
-            }
-
-            // Laptop on desk
-            try {
-              this.add.image(dx + TILE * 0.7, dy + TILE * 0.35, 'laptop')
-                .setOrigin(0, 0)
-                .setScale(0.35);
-            } catch { /* tile not loaded */ }
-
-            // Monitor screen glow (colored rectangle over desk)
-            g.fillStyle(0x44aadd, 0.25);
-            g.fillRect(dx + TILE * 1.8, dy + TILE * 0.2, TILE * 0.8, TILE * 0.5);
-          }
-
-          // --- Meeting rooms ---
+          // Meeting room walls
           for (const room of cfg.meetingRooms) {
-            const rx = room.col * TILE;
-            const ry = room.row * TILE;
-            const rw = room.w * TILE;
-            const rh = room.h * TILE;
-            // Floor tint
-            g.fillStyle(0xa08264, 0.15);
-            g.fillRect(rx, ry, rw, rh);
-            // Border
             g.lineStyle(0.8, 0xa07840, 0.2);
-            g.strokeRect(rx, ry, rw, rh);
-            // Meeting table
-            const tw = TILE * 4;
-            const th = TILE * 1.6;
-            const tx = rx + (rw - tw) / 2;
-            const ty = ry + (rh - th) / 2;
-            g.fillStyle(0x7a5a3a);
-            g.fillRoundedRect(tx, ty, tw, th, 3);
-            g.fillStyle(0x9a7a5a, 0.3);
-            g.fillRect(tx + 2, ty + 2, tw - 4, 2);
-
-            // TV in meeting room
-            try {
-              this.add.image(rx + rw / 2, ry + 4, 'tv')
-                .setOrigin(0.5, 0)
-                .setScale(0.35);
-            } catch { /* tile not loaded */ }
+            g.strokeRect(room.col * TILE, room.row * TILE, room.w * TILE, room.h * TILE);
           }
 
-          // --- Break room ---
+          // Break room walls
           if (cfg.breakRoom) {
             const br = cfg.breakRoom;
-            const bx = br.col * TILE;
-            const by = br.row * TILE;
-            const bw = br.w * TILE;
-            const bh = br.h * TILE;
-            // Floor tint
-            g.fillStyle(0x78b48c, 0.12);
-            g.fillRect(bx, by, bw, bh);
             g.lineStyle(0.8, 0x50a064, 0.15);
-            g.strokeRect(bx, by, bw, bh);
-
-            // Coffee maker (LPC tile)
-            try {
-              this.add.image(bx + TILE * 0.9, by + TILE * 0.6, 'coffee-maker')
-                .setOrigin(0.5, 0)
-                .setScale(0.5);
-            } catch {
-              // Fallback graphics
-              g.fillStyle(0x6a4a3a);
-              g.fillRect(bx + TILE * 0.5, by + TILE * 0.4, TILE * 0.8, TILE * 1);
-            }
-
-            // Coffee cup on counter
-            try {
-              this.add.image(bx + TILE * 2, by + TILE * 0.8, 'coffee-cup')
-                .setOrigin(0.5, 0.5)
-                .setScale(0.35);
-            } catch { /* tile not loaded */ }
-
-            // Water cooler
-            try {
-              this.add.image(bx + TILE * 3, by + TILE * 0.5, 'water-cooler')
-                .setOrigin(0.5, 0)
-                .setScale(0.5);
-            } catch { /* tile not loaded */ }
-
-            // Couch (keep graphics — no specific LPC tile)
-            g.fillStyle(0x6a7a9a);
-            g.fillRoundedRect(
-              bx + TILE * 3.5,
-              by + TILE * 1.5,
-              TILE * 3,
-              TILE * 1.2,
-              4,
-            );
-            g.fillStyle(0x5a6a8a, 0.5);
-            g.fillRect(bx + TILE * 3.5, by + TILE * 1.5, TILE * 0.5, TILE * 1.2);
-            g.fillRect(bx + TILE * 6, by + TILE * 1.5, TILE * 0.5, TILE * 1.2);
+            g.strokeRect(br.col * TILE, br.row * TILE, br.w * TILE, br.h * TILE);
           }
 
-          // --- Copy machine & bins near break room ---
-          try {
-            const cmX = (cfg.breakRoom ? cfg.breakRoom.col + cfg.breakRoom.w + 1 : 10) * TILE;
-            const cmY = (cfg.breakRoom ? cfg.breakRoom.row : 10) * TILE + TILE * 0.5;
-            this.add.image(cmX, cmY, 'copy-machine')
-              .setOrigin(0, 0)
-              .setScale(0.5);
-            this.add.image(cmX + TILE * 2.5, cmY + TILE * 0.3, 'bins')
-              .setOrigin(0, 0)
-              .setScale(0.35);
-          } catch { /* tiles not loaded */ }
+          // ========== LAYER 3: FURNITURE ==========
 
-          // --- Plants (green circles) ---
-          const plantSpots = [
-            [0, 4],
-            [26, 4],
-            [0, 8],
-            [26, 8],
-            [26, cfg.rows - 3],
-            [13, cfg.rows - 2],
-          ];
-          for (const [c, r] of plantSpots) {
-            if (r >= cfg.rows) continue;
-            const px = c * TILE + TILE * 0.5;
-            const py = r * TILE + TILE * 0.5;
-            // Pot
-            g.fillStyle(0x8a5a3a);
-            g.fillRect(px - 3, py + 2, 8, 5);
-            // Foliage
-            g.fillStyle(0x4a8a3a, 0.85);
-            g.fillCircle(px + 1, py - 2, 5);
-            g.fillStyle(0x5aaa4a, 0.7);
-            g.fillCircle(px - 2, py, 4);
-            g.fillCircle(px + 4, py, 4);
-          }
+          this.drawDesks(g, cfg);
+          this.drawMeetingFurniture(g, cfg);
+          this.drawBreakRoomFurniture(g, cfg);
+          this.drawBossOfficeFurniture(g, cfg);
+          this.drawServerRoomFurniture(g, cfg);
+          this.drawArchivesFurniture(g, cfg);
+          this.drawLoungeFurniture(g, cfg);
+          this.drawRestroomsFurniture(g, cfg);
+          this.drawPlants(g, cfg);
 
-          // --- Label for break room ---
-          if (cfg.breakRoom) {
-            this.add
-              .text(cfg.breakRoom.col * TILE, cfg.breakRoom.row * TILE - 6, "Kitchen & Lounge", {
-                fontSize: "5px",
-                color: "#8a7a6a",
-                fontFamily: "sans-serif",
-              })
-              .setOrigin(0, 1);
-          }
+          // ========== LAYER 4: LABELS ==========
 
-          // --- Meeting label ---
           for (let i = 0; i < cfg.meetingRooms.length; i++) {
             const room = cfg.meetingRooms[i];
-            this.add
-              .text(
-                room.col * TILE,
-                room.row * TILE - 6,
-                `Meeting ${i + 1}`,
-                {
-                  fontSize: "5px",
-                  color: "#8a7a6a",
-                  fontFamily: "sans-serif",
-                },
-              )
-              .setOrigin(0, 1);
+            this.drawRoomLabel(room.col * TILE, room.row * TILE - 6, `Meeting ${i + 1}`);
           }
-
-          // ============================================================
-          //  RIGHT-SIDE ROOMS
-          // ============================================================
-
-          this.drawHallway(g, cfg);
-          this.drawBossOffice(g, cfg);
-          this.drawServerRoom(g, cfg);
-          this.drawArchives(g, cfg);
-          this.drawLounge(g, cfg);
-          this.drawRestrooms(g, cfg);
+          if (cfg.breakRoom) {
+            this.drawRoomLabel(cfg.breakRoom.col * TILE, cfg.breakRoom.row * TILE - 6, "Kitchen & Lounge");
+          }
+          if (cfg.bossOffice) {
+            this.drawRoomLabel(cfg.bossOffice.col * TILE, cfg.bossOffice.row * TILE - 6, "Boss Office");
+          }
+          if (cfg.serverRoom) {
+            this.drawRoomLabel(cfg.serverRoom.col * TILE, cfg.serverRoom.row * TILE - 6, "Server Room");
+          }
+          if (cfg.archives) {
+            this.drawRoomLabel(cfg.archives.col * TILE, cfg.archives.row * TILE - 6, "Archives");
+          }
+          if (cfg.lounge) {
+            this.drawRoomLabel(cfg.lounge.col * TILE, cfg.lounge.row * TILE - 6, "Lounge");
+          }
+          if (cfg.restrooms) {
+            this.drawRoomLabel(cfg.restrooms.col * TILE, cfg.restrooms.row * TILE - 6, "Restrooms");
+          }
         }
 
         /* ---------------------------------------------------------- */
-        /*  Room-drawing helpers (right-side wing)                     */
+        /*  Room floor helper                                          */
         /* ---------------------------------------------------------- */
 
-        /** Helper: draw room walls with a doorway gap at the bottom-centre */
+        private drawRoomFloor(
+          g: Phaser.GameObjects.Graphics,
+          room: { row: number; col: number; w: number; h: number } | null,
+          shade1: number,
+          shade2: number,
+        ) {
+          if (!room) return;
+          for (let r = room.row; r < room.row + room.h; r++) {
+            for (let c = room.col; c < room.col + room.w; c++) {
+              const shade = (r + c) % 2 === 0 ? shade1 : shade2;
+              g.fillStyle(shade);
+              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+            }
+          }
+        }
+
+        /* ---------------------------------------------------------- */
+        /*  Room wall helper                                           */
+        /* ---------------------------------------------------------- */
+
         private drawRoomWalls(
           g: Phaser.GameObjects.Graphics,
-          room: { row: number; col: number; w: number; h: number },
+          room: { row: number; col: number; w: number; h: number } | null,
           doorSide: "bottom" | "left" = "bottom",
         ) {
+          if (!room) return;
           const rx = room.col * TILE;
           const ry = room.row * TILE;
           const rw = room.w * TILE;
@@ -457,30 +405,31 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           g.lineBetween(rx, ry, rx + rw, ry);
           // Right wall
           g.lineBetween(rx + rw, ry, rx + rw, ry + rh);
+
           // Bottom wall with optional door
           if (doorSide === "bottom") {
-            const doorX = rx + rw / 2;
-            g.lineBetween(rx, ry + rh, doorX - TILE * 0.7, ry + rh);
-            g.lineBetween(doorX + TILE * 0.7, ry + rh, rx + rw, ry + rh);
+            const doorX = rx + Math.floor(rw / 2);
+            g.lineBetween(rx, ry + rh, doorX - TILE, ry + rh);
+            g.lineBetween(doorX + TILE, ry + rh, rx + rw, ry + rh);
           } else {
             g.lineBetween(rx, ry + rh, rx + rw, ry + rh);
           }
+
           // Left wall with optional door
           if (doorSide === "left") {
-            const doorY = ry + rh / 2;
-            g.lineBetween(rx, ry, rx, doorY - TILE * 0.7);
-            g.lineBetween(rx, doorY + TILE * 0.7, rx, ry + rh);
+            const doorY = ry + Math.floor(rh / 2);
+            g.lineBetween(rx, ry, rx, doorY - TILE);
+            g.lineBetween(rx, doorY + TILE, rx, ry + rh);
           } else {
             g.lineBetween(rx, ry, rx, ry + rh);
           }
         }
 
-        /** Room label */
-        private drawRoomLabel(
-          x: number,
-          y: number,
-          text: string,
-        ) {
+        /* ---------------------------------------------------------- */
+        /*  Room label helper                                          */
+        /* ---------------------------------------------------------- */
+
+        private drawRoomLabel(x: number, y: number, text: string) {
           this.add
             .text(x, y, text, {
               fontSize: "5px",
@@ -490,148 +439,166 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             .setOrigin(0, 1);
         }
 
-        /* ---- Hallway (vertical corridor connecting right-side rooms) ---- */
+        /* ---------------------------------------------------------- */
+        /*  Desks (3 wide x 2 tall each, strict grid)                  */
+        /* ---------------------------------------------------------- */
 
-        private drawHallway(
-          g: Phaser.GameObjects.Graphics,
-          cfg: OfficeConfig,
-        ) {
-          if (!cfg.hallway) return;
-          const hw = cfg.hallway;
-          const hx = hw.col * TILE;
-          const hy = hw.row * TILE;
-          const hh = hw.h * TILE;
-          const hww = hw.w * TILE;
+        private drawDesks(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
+          for (const desk of cfg.desks) {
+            const r = desk.row;
+            const c = desk.col;
 
-          // Floor — same as main office
-          for (let r = hw.row; r < hw.row + hw.h; r++) {
-            const shade = (r + hw.col) % 2 === 0 ? 0xc8a878 : 0xc4a474;
-            g.fillStyle(shade);
-            g.fillRect(hx, r * TILE, hww, TILE);
+            // Each desk is 3 cols x 2 rows
+            if (!this.isFree(r, c, 2, 3)) continue;
+            this.markOccupied(r, c, 2, 3);
+
+            const dx = c * TILE;
+            const dy = r * TILE;
+
+            // Desk surface
+            try {
+              const deskImg = this.add.image(dx, dy, 'desk');
+              deskImg.setOrigin(0, 0);
+              deskImg.setDisplaySize(3 * TILE, 2 * TILE);
+            } catch {
+              g.fillStyle(0x8b6b4a);
+              g.fillRect(dx, dy, 3 * TILE, 2 * TILE);
+            }
+
+            // Laptop on desk (top-left cell)
+            try {
+              this.add.image(dx, dy, 'laptop')
+                .setOrigin(0, 0)
+                .setDisplaySize(TILE, TILE);
+            } catch { /* tile not loaded */ }
+
+            // Monitor glow (top-right area)
+            g.fillStyle(0x44aadd, 0.25);
+            g.fillRect(dx + 2 * TILE, dy, TILE, TILE);
           }
-
-          // Water cooler in hallway
-          try {
-            this.add.image(hx + TILE * 0.5, hy + TILE * 1, 'water-cooler')
-              .setOrigin(0.5, 0)
-              .setScale(0.4);
-          } catch { /* tile not loaded */ }
-
-          // Notice board (small rectangle on left wall)
-          g.fillStyle(0x8b6b4a);
-          g.fillRect(hx + 2, hy + TILE * 4, TILE * 0.6, TILE * 0.8);
-          g.fillStyle(0xf5f0e0);
-          g.fillRect(hx + 4, hy + TILE * 4 + 2, TILE * 0.6 - 4, TILE * 0.8 - 4);
-          // Coloured paper pins
-          g.fillStyle(0xdd4444);
-          g.fillRect(hx + 6, hy + TILE * 4 + 4, 3, 3);
-          g.fillStyle(0x44aa44);
-          g.fillRect(hx + 11, hy + TILE * 4 + 4, 3, 3);
-          g.fillStyle(0x4488dd);
-          g.fillRect(hx + 6, hy + TILE * 4 + 10, 3, 3);
-
-          // Fire extinguisher (small red rectangle)
-          g.fillStyle(0xcc2222);
-          g.fillRect(hx + 4, hy + TILE * 8, 5, TILE * 0.7);
-          g.fillStyle(0x333333);
-          g.fillRect(hx + 5, hy + TILE * 8 - 2, 3, 3);
         }
 
-        /* ---- Boss Office ---- */
+        /* ---------------------------------------------------------- */
+        /*  Meeting room furniture                                     */
+        /* ---------------------------------------------------------- */
 
-        private drawBossOffice(
-          g: Phaser.GameObjects.Graphics,
-          cfg: OfficeConfig,
-        ) {
+        private drawMeetingFurniture(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
+          for (const room of cfg.meetingRooms) {
+            // Meeting table: 4 wide x 2 tall, centered in room
+            const tableCol = room.col + Math.floor((room.w - 4) / 2);
+            const tableRow = room.row + Math.floor((room.h - 2) / 2);
+
+            this.markOccupied(tableRow, tableCol, 2, 4);
+
+            g.fillStyle(0x7a5a3a);
+            g.fillRect(tableCol * TILE, tableRow * TILE, 4 * TILE, 2 * TILE);
+            g.fillStyle(0x9a7a5a, 0.3);
+            g.fillRect(tableCol * TILE + 2, tableRow * TILE + 2, 4 * TILE - 4, 2);
+
+            // TV at top of room (1 cell)
+            const tvCol = room.col + Math.floor(room.w / 2);
+            if (this.isFree(room.row, tvCol, 1, 1)) {
+              this.markOccupied(room.row, tvCol, 1, 1);
+              try {
+                this.add.image(tvCol * TILE, room.row * TILE, 'tv')
+                  .setOrigin(0, 0)
+                  .setDisplaySize(TILE, TILE);
+              } catch { /* tile not loaded */ }
+            }
+          }
+        }
+
+        /* ---------------------------------------------------------- */
+        /*  Break room furniture                                       */
+        /* ---------------------------------------------------------- */
+
+        private drawBreakRoomFurniture(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
+          if (!cfg.breakRoom) return;
+          const br = cfg.breakRoom;
+
+          // Coffee maker (1 cell)
+          const cmR = br.row;
+          const cmC = br.col + 1;
+          if (this.isFree(cmR, cmC, 1, 1)) {
+            this.markOccupied(cmR, cmC, 1, 1);
+            try {
+              this.add.image(cmC * TILE, cmR * TILE, 'coffee-maker')
+                .setOrigin(0, 0)
+                .setDisplaySize(TILE, TILE);
+            } catch {
+              g.fillStyle(0x6a4a3a);
+              g.fillRect(cmC * TILE, cmR * TILE, TILE, TILE);
+            }
+          }
+
+          // Water cooler (1 cell)
+          const wcR = br.row;
+          const wcC = br.col + 3;
+          if (this.isFree(wcR, wcC, 1, 1)) {
+            this.markOccupied(wcR, wcC, 1, 1);
+            try {
+              this.add.image(wcC * TILE, wcR * TILE, 'water-cooler')
+                .setOrigin(0, 0)
+                .setDisplaySize(TILE, TILE);
+            } catch { /* tile not loaded */ }
+          }
+
+          // Couch (3 wide x 1 tall)
+          const couchR = br.row + 1;
+          const couchC = br.col + 5;
+          if (this.isFree(couchR, couchC, 1, 3)) {
+            this.markOccupied(couchR, couchC, 1, 3);
+            g.fillStyle(0x6a7a9a);
+            g.fillRect(couchC * TILE, couchR * TILE, 3 * TILE, TILE);
+            // Armrests
+            g.fillStyle(0x5a6a8a, 0.5);
+            g.fillRect(couchC * TILE, couchR * TILE, TILE / 2, TILE);
+            g.fillRect((couchC + 3) * TILE - TILE / 2, couchR * TILE, TILE / 2, TILE);
+          }
+
+          // Copy machine (1 cell, next to break room)
+          const cpR = br.row;
+          const cpC = br.col + br.w + 1;
+          if (cpC < cfg.cols && this.isFree(cpR, cpC, 1, 1)) {
+            this.markOccupied(cpR, cpC, 1, 1);
+            try {
+              this.add.image(cpC * TILE, cpR * TILE, 'copy-machine')
+                .setOrigin(0, 0)
+                .setDisplaySize(TILE, TILE);
+            } catch { /* tile not loaded */ }
+          }
+        }
+
+        /* ---------------------------------------------------------- */
+        /*  Boss Office furniture                                      */
+        /* ---------------------------------------------------------- */
+
+        private drawBossOfficeFurniture(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
           if (!cfg.bossOffice) return;
           const room = cfg.bossOffice;
           const rx = room.col * TILE;
           const ry = room.row * TILE;
           const rw = room.w * TILE;
-          const rh = room.h * TILE;
 
-          // Warm wood floor
-          for (let r = room.row; r < room.row + room.h; r++) {
-            for (let c = room.col; c < room.col + room.w; c++) {
-              const shade = (r + c) % 2 === 0 ? 0xc49a6c : 0xc0966a;
-              g.fillStyle(shade);
-              g.fillRect(c * TILE, r * TILE, TILE, TILE);
-            }
+          // Executive desk: 4 wide x 1 tall, at row+0 offset by 3 cols
+          const deskR = room.row;
+          const deskC = room.col + 3;
+          if (this.isFree(deskR, deskC, 1, 4)) {
+            this.markOccupied(deskR, deskC, 1, 4);
+            g.fillStyle(0x5a3a1a);
+            g.fillRect(deskC * TILE, deskR * TILE, 4 * TILE, TILE);
+            // Monitor
+            g.fillStyle(0x222222);
+            g.fillRect((deskC + 1) * TILE, deskR * TILE, 2 * TILE, TILE);
+            g.fillStyle(0x44aadd, 0.5);
+            g.fillRect((deskC + 1) * TILE + 2, deskR * TILE + 2, 2 * TILE - 4, TILE - 4);
           }
 
-          // Rug (central area)
-          g.fillStyle(0x8b2222, 0.25);
-          g.fillRoundedRect(
-            rx + TILE * 2, ry + TILE * 1,
-            TILE * 6, TILE * 2, 3,
-          );
-          g.lineStyle(0.5, 0x8b2222, 0.35);
-          g.strokeRoundedRect(
-            rx + TILE * 2, ry + TILE * 1,
-            TILE * 6, TILE * 2, 3,
-          );
-
-          // Large executive desk (back wall)
-          g.fillStyle(0x5a3a1a);
-          g.fillRoundedRect(rx + TILE * 3, ry + TILE * 0.3, TILE * 4, TILE * 1.4, 2);
-          // Desk surface highlight
-          g.fillStyle(0x7a5a3a, 0.4);
-          g.fillRect(rx + TILE * 3.2, ry + TILE * 0.5, TILE * 3.6, TILE * 0.3);
-
-          // Big monitor
-          g.fillStyle(0x222222);
-          g.fillRect(rx + TILE * 4.2, ry + TILE * 0.1, TILE * 1.6, TILE * 0.9);
-          g.fillStyle(0x44aadd, 0.5);
-          g.fillRect(rx + TILE * 4.3, ry + TILE * 0.2, TILE * 1.4, TILE * 0.7);
-          // Monitor stand
-          g.fillStyle(0x333333);
-          g.fillRect(rx + TILE * 4.8, ry + TILE * 1.0, TILE * 0.4, TILE * 0.3);
-
-          // Leather chair (dark brown circle)
-          g.fillStyle(0x3a2a1a);
-          g.fillCircle(rx + TILE * 5, ry + TILE * 2.0, TILE * 0.4);
-          g.fillStyle(0x4a3a2a, 0.6);
-          g.fillCircle(rx + TILE * 5, ry + TILE * 2.0, TILE * 0.25);
-
-          // Bookshelf on right wall
-          g.fillStyle(0x6a4a2a);
-          g.fillRect(rx + rw - TILE * 1.8, ry + TILE * 0.2, TILE * 1.5, TILE * 2.8);
-          // Shelf lines
-          g.lineStyle(0.5, 0x5a3a1a, 0.6);
-          for (let s = 0; s < 4; s++) {
-            const sy = ry + TILE * 0.6 + s * TILE * 0.65;
-            g.lineBetween(rx + rw - TILE * 1.7, sy, rx + rw - TILE * 0.4, sy);
-          }
-          // Coloured book spines
-          const bookColors = [0x2244aa, 0xaa2222, 0x22aa44, 0xaaaa22, 0x8822aa];
-          for (let s = 0; s < 4; s++) {
-            const sy = ry + TILE * 0.3 + s * TILE * 0.65;
-            for (let b = 0; b < 4; b++) {
-              g.fillStyle(bookColors[(s + b) % bookColors.length], 0.7);
-              g.fillRect(
-                rx + rw - TILE * 1.6 + b * TILE * 0.3,
-                sy,
-                TILE * 0.2,
-                TILE * 0.55,
-              );
-            }
-          }
-
-          // Window on back wall
-          g.fillStyle(0xa8d8ea, 0.6);
-          g.fillRect(rx + TILE * 0.5, ry + TILE * 0.3, TILE * 2, TILE * 1.2);
-          g.lineStyle(0.8, 0x8ab8ca, 0.8);
-          g.strokeRect(rx + TILE * 0.5, ry + TILE * 0.3, TILE * 2, TILE * 1.2);
-          g.lineBetween(
-            rx + TILE * 1.5, ry + TILE * 0.3,
-            rx + TILE * 1.5, ry + TILE * 1.5,
-          );
-
-          // Nameplate on desk
+          // Nameplate
           g.fillStyle(0xd4af37);
-          g.fillRect(rx + TILE * 3.5, ry + TILE * 1.4, TILE * 1.2, TILE * 0.25);
+          g.fillRect((deskC + 1) * TILE, (deskR + 1) * TILE - 8, TILE, 6);
           this.add.text(
-            rx + TILE * 4.1, ry + TILE * 1.42,
+            (deskC + 1) * TILE + TILE / 2, (deskR + 1) * TILE - 7,
             "BOSS", {
               fontSize: "4px",
               color: "#3a2a1a",
@@ -639,345 +606,303 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             },
           ).setOrigin(0.5, 0);
 
-          // Walls and door
-          this.drawRoomWalls(g, room, "left");
-          this.drawRoomLabel(rx, ry - 6, "Boss Office");
-        }
+          // Chair (1 cell below desk)
+          const chairR = room.row + 1;
+          const chairC = room.col + 4;
+          if (this.isFree(chairR, chairC, 1, 1)) {
+            this.markOccupied(chairR, chairC, 1, 1);
+            g.fillStyle(0x3a2a1a);
+            g.fillCircle(chairC * TILE + TILE / 2, chairR * TILE + TILE / 2, TILE / 3);
+          }
 
-        /* ---- Server Room ---- */
+          // Rug (decorative, no occupancy)
+          g.fillStyle(0x8b2222, 0.25);
+          g.fillRect((room.col + 2) * TILE, (room.row + 1) * TILE, 6 * TILE, 2 * TILE);
 
-        private drawServerRoom(
-          g: Phaser.GameObjects.Graphics,
-          cfg: OfficeConfig,
-        ) {
-          if (!cfg.serverRoom) return;
-          const room = cfg.serverRoom;
-          const rx = room.col * TILE;
-          const ry = room.row * TILE;
-          const rw = room.w * TILE;
-          const rh = room.h * TILE;
-
-          // Dark floor
-          for (let r = room.row; r < room.row + room.h; r++) {
-            for (let c = room.col; c < room.col + room.w; c++) {
-              const shade = (r + c) % 2 === 0 ? 0x3a3a4a : 0x38384a;
-              g.fillStyle(shade);
-              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+          // Bookshelf: 2 tall x 1 wide on right side
+          const bsR = room.row;
+          const bsC = room.col + room.w - 2;
+          if (this.isFree(bsR, bsC, 3, 1)) {
+            this.markOccupied(bsR, bsC, 3, 1);
+            g.fillStyle(0x6a4a2a);
+            g.fillRect(bsC * TILE, bsR * TILE, TILE, 3 * TILE);
+            // Shelf lines
+            g.lineStyle(0.5, 0x5a3a1a, 0.6);
+            for (let s = 0; s < 4; s++) {
+              const sy = bsR * TILE + s * (3 * TILE / 4);
+              g.lineBetween(bsC * TILE + 2, sy, (bsC + 1) * TILE - 2, sy);
+            }
+            // Book spines
+            const bookColors = [0x2244aa, 0xaa2222, 0x22aa44, 0xaaaa22];
+            for (let s = 0; s < 3; s++) {
+              for (let b = 0; b < 3; b++) {
+                g.fillStyle(bookColors[(s + b) % bookColors.length], 0.7);
+                g.fillRect(
+                  bsC * TILE + 3 + b * 8,
+                  bsR * TILE + 3 + s * TILE,
+                  6, TILE - 6,
+                );
+              }
             }
           }
+
+          // Window on back wall (2 wide, row 0 of room)
+          g.fillStyle(0xa8d8ea, 0.6);
+          g.fillRect(room.col * TILE + TILE, room.row * TILE, 2 * TILE, TILE);
+          g.lineStyle(0.8, 0x8ab8ca, 0.8);
+          g.strokeRect(room.col * TILE + TILE, room.row * TILE, 2 * TILE, TILE);
+        }
+
+        /* ---------------------------------------------------------- */
+        /*  Server Room furniture                                      */
+        /* ---------------------------------------------------------- */
+
+        private drawServerRoomFurniture(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
+          if (!cfg.serverRoom) return;
+          const room = cfg.serverRoom;
 
           // Blue tint overlay
           const blueOverlay = this.add.graphics();
           blueOverlay.fillStyle(0x2244aa, 0.08);
-          blueOverlay.fillRect(rx, ry, rw, rh);
+          blueOverlay.fillRect(room.col * TILE, room.row * TILE, room.w * TILE, room.h * TILE);
 
-          // Server racks (tall rectangles)
-          const rackColors = [0x2a2a2a, 0x333333, 0x2a2a2a];
+          // Server racks: 3 racks, each 1 wide x 3 tall
           for (let i = 0; i < 3; i++) {
-            const rackX = rx + TILE * 0.5 + i * TILE * 1.5;
-            const rackY = ry + TILE * 0.3;
-            const rackW = TILE * 1.0;
-            const rackH = TILE * 3.0;
+            const rackR = room.row;
+            const rackC = room.col + 1 + i;
+            if (!this.isFree(rackR, rackC, 3, 1)) continue;
+            this.markOccupied(rackR, rackC, 3, 1);
+
+            const rackX = rackC * TILE;
+            const rackY = rackR * TILE;
 
             // Rack body
-            g.fillStyle(rackColors[i]);
-            g.fillRect(rackX, rackY, rackW, rackH);
-            // Rack border
+            g.fillStyle(i % 2 === 0 ? 0x2a2a2a : 0x333333);
+            g.fillRect(rackX, rackY, TILE, 3 * TILE);
             g.lineStyle(0.5, 0x555555, 0.6);
-            g.strokeRect(rackX, rackY, rackW, rackH);
+            g.strokeRect(rackX, rackY, TILE, 3 * TILE);
 
-            // Blinking indicator lights (coloured dots)
+            // Indicator lights
             const lightColors = [0x00ff44, 0x44aaff, 0xff8800, 0x00ff44, 0x44aaff];
             for (let l = 0; l < 5; l++) {
-              const lx = rackX + TILE * 0.2;
-              const ly = rackY + TILE * 0.3 + l * TILE * 0.55;
               g.fillStyle(lightColors[l], 0.9);
-              g.fillCircle(lx, ly, 1.5);
-              // Second light
+              g.fillCircle(rackX + 6, rackY + 8 + l * 18, 1.5);
               g.fillStyle(lightColors[(l + 2) % 5], 0.7);
-              g.fillCircle(lx + TILE * 0.6, ly, 1.5);
-            }
-
-            // Ventilation lines
-            g.lineStyle(0.3, 0x555555, 0.4);
-            for (let v = 0; v < 6; v++) {
-              const vy = rackY + TILE * 0.2 + v * TILE * 0.5;
-              g.lineBetween(rackX + 2, vy, rackX + rackW - 2, vy);
+              g.fillCircle(rackX + TILE - 6, rackY + 8 + l * 18, 1.5);
             }
           }
-
-          // Cable tray (across top)
-          g.fillStyle(0x444444);
-          g.fillRect(rx + TILE * 0.3, ry + TILE * 0.1, rw - TILE * 0.6, 3);
-          // Cables (coloured lines from tray down)
-          const cableColors = [0x2266dd, 0xdd6622, 0x22aa44];
-          for (let cb = 0; cb < 3; cb++) {
-            g.lineStyle(0.5, cableColors[cb], 0.5);
-            const cx = rx + TILE * 1.0 + cb * TILE * 1.5;
-            g.lineBetween(cx, ry + TILE * 0.1, cx, ry + TILE * 0.3);
-          }
-
-          // Walls and door
-          this.drawRoomWalls(g, room, "left");
-          this.drawRoomLabel(rx, ry - 6, "Server Room");
         }
 
-        /* ---- Archives Room ---- */
+        /* ---------------------------------------------------------- */
+        /*  Archives furniture                                         */
+        /* ---------------------------------------------------------- */
 
-        private drawArchives(
-          g: Phaser.GameObjects.Graphics,
-          cfg: OfficeConfig,
-        ) {
+        private drawArchivesFurniture(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
           if (!cfg.archives) return;
           const room = cfg.archives;
-          const rx = room.col * TILE;
-          const ry = room.row * TILE;
-          const rw = room.w * TILE;
-          const rh = room.h * TILE;
 
-          // Slightly darker warm floor
-          for (let r = room.row; r < room.row + room.h; r++) {
-            for (let c = room.col; c < room.col + room.w; c++) {
-              const shade = (r + c) % 2 === 0 ? 0xb8a080 : 0xb49c7c;
-              g.fillStyle(shade);
-              g.fillRect(c * TILE, r * TILE, TILE, TILE);
-            }
-          }
-
-          // Dim warm light overlay
+          // Warm overlay
           const warmOverlay = this.add.graphics();
           warmOverlay.fillStyle(0xaa8844, 0.05);
-          warmOverlay.fillRect(rx, ry, rw, rh);
+          warmOverlay.fillRect(room.col * TILE, room.row * TILE, room.w * TILE, room.h * TILE);
 
-          // Filing cabinets (2 rows)
+          // Filing cabinets: 2 rows x 4 cols, each 1x1 cell
           for (let row = 0; row < 2; row++) {
             for (let cab = 0; cab < 4; cab++) {
-              const cx = rx + TILE * 0.4 + cab * TILE * 1.4;
-              const cy = ry + TILE * 0.3 + row * TILE * 1.8;
-              const cw = TILE * 1.0;
-              const ch = TILE * 1.5;
+              const cabR = room.row + row;
+              const cabC = room.col + 1 + cab;
+              if (!this.isFree(cabR, cabC, 1, 1)) continue;
+              this.markOccupied(cabR, cabC, 1, 1);
 
-              // Cabinet body
+              const cx = cabC * TILE;
+              const cy = cabR * TILE;
+
               g.fillStyle(row === 0 ? 0x888888 : 0x7a7a7a);
-              g.fillRect(cx, cy, cw, ch);
+              g.fillRect(cx, cy, TILE, TILE);
               g.lineStyle(0.5, 0x666666, 0.5);
-              g.strokeRect(cx, cy, cw, ch);
+              g.strokeRect(cx, cy, TILE, TILE);
 
               // Drawer lines
               g.lineStyle(0.4, 0x666666, 0.6);
               for (let d = 1; d <= 3; d++) {
-                g.lineBetween(cx + 1, cy + d * (ch / 4), cx + cw - 1, cy + d * (ch / 4));
+                g.lineBetween(cx + 1, cy + d * (TILE / 4), cx + TILE - 1, cy + d * (TILE / 4));
               }
-              // Drawer handles
-              for (let d = 0; d < 4; d++) {
-                g.fillStyle(0xaaaaaa, 0.7);
-                g.fillRect(cx + cw / 2 - 2, cy + d * (ch / 4) + (ch / 8) - 1, 4, 2);
-              }
+              // Handle
+              g.fillStyle(0xaaaaaa, 0.7);
+              g.fillRect(cx + TILE / 2 - 2, cy + TILE / 2 - 1, 4, 2);
             }
           }
 
-          // Boxes on floor (bottom-right corner)
-          const boxColors = [0x8b6b4a, 0x9a7a5a, 0x7a5a3a];
-          for (let b = 0; b < 3; b++) {
-            g.fillStyle(boxColors[b]);
-            g.fillRect(
-              rx + rw - TILE * 1.5 + b * TILE * 0.35,
-              ry + rh - TILE * 0.9,
-              TILE * 0.6,
-              TILE * 0.6,
-            );
-            g.lineStyle(0.3, 0x5a4a3a, 0.4);
-            g.strokeRect(
-              rx + rw - TILE * 1.5 + b * TILE * 0.35,
-              ry + rh - TILE * 0.9,
-              TILE * 0.6,
-              TILE * 0.6,
-            );
+          // Boxes on floor (bottom-right, 1 cell)
+          const boxR = room.row + room.h - 1;
+          const boxC = room.col + room.w - 2;
+          if (this.isFree(boxR, boxC, 1, 1)) {
+            this.markOccupied(boxR, boxC, 1, 1);
+            const boxColors = [0x8b6b4a, 0x9a7a5a, 0x7a5a3a];
+            for (let b = 0; b < 3; b++) {
+              g.fillStyle(boxColors[b]);
+              g.fillRect(boxC * TILE + b * 9, boxR * TILE + 6, 8, 8);
+            }
           }
-
-          // Walls and door
-          this.drawRoomWalls(g, room, "left");
-          this.drawRoomLabel(rx, ry - 6, "Archives");
         }
 
-        /* ---- Lounge / Break Room ---- */
+        /* ---------------------------------------------------------- */
+        /*  Lounge furniture                                           */
+        /* ---------------------------------------------------------- */
 
-        private drawLounge(
-          g: Phaser.GameObjects.Graphics,
-          cfg: OfficeConfig,
-        ) {
+        private drawLoungeFurniture(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
           if (!cfg.lounge) return;
           const room = cfg.lounge;
-          const rx = room.col * TILE;
-          const ry = room.row * TILE;
-          const rw = room.w * TILE;
-          const rh = room.h * TILE;
 
-          // Warm floor
-          for (let r = room.row; r < room.row + room.h; r++) {
-            for (let c = room.col; c < room.col + room.w; c++) {
-              const shade = (r + c) % 2 === 0 ? 0xc8a878 : 0xc4a474;
-              g.fillStyle(shade);
-              g.fillRect(c * TILE, r * TILE, TILE, TILE);
+          // Couch 1 (left side, 1 wide x 2 tall)
+          const c1R = room.row + 1;
+          const c1C = room.col + 1;
+          if (this.isFree(c1R, c1C, 2, 1)) {
+            this.markOccupied(c1R, c1C, 2, 1);
+            g.fillStyle(0x5a6a9a);
+            g.fillRect(c1C * TILE, c1R * TILE, TILE, 2 * TILE);
+          }
+
+          // Coffee table (1 wide x 2 tall, center)
+          const ctR = room.row + 1;
+          const ctC = room.col + 3;
+          if (this.isFree(ctR, ctC, 2, 1)) {
+            this.markOccupied(ctR, ctC, 2, 1);
+            g.fillStyle(0x7a5a3a);
+            g.fillRect(ctC * TILE, ctR * TILE, TILE, 2 * TILE);
+          }
+
+          // Couch 2 (right side, 1 wide x 2 tall)
+          const c2R = room.row + 1;
+          const c2C = room.col + 5;
+          if (this.isFree(c2R, c2C, 2, 1)) {
+            this.markOccupied(c2R, c2C, 2, 1);
+            g.fillStyle(0x5a6a9a);
+            g.fillRect(c2C * TILE, c2R * TILE, TILE, 2 * TILE);
+          }
+
+          // Vending machine (1 wide x 2 tall)
+          const vmR = room.row + 1;
+          const vmC = room.col + 7;
+          if (vmC < room.col + room.w && this.isFree(vmR, vmC, 2, 1)) {
+            this.markOccupied(vmR, vmC, 2, 1);
+            g.fillStyle(0x2244aa);
+            g.fillRect(vmC * TILE, vmR * TILE, TILE, 2 * TILE);
+            // Display
+            g.fillStyle(0xaaddff, 0.3);
+            g.fillRect(vmC * TILE + 2, vmR * TILE + 2, TILE - 4, TILE - 4);
+          }
+
+          // TV at top (1 cell)
+          const tvR = room.row;
+          const tvC = room.col + 3;
+          if (this.isFree(tvR, tvC, 1, 1)) {
+            this.markOccupied(tvR, tvC, 1, 1);
+            try {
+              this.add.image(tvC * TILE, tvR * TILE, 'tv')
+                .setOrigin(0, 0)
+                .setDisplaySize(TILE, TILE);
+            } catch {
+              g.fillStyle(0x222244);
+              g.fillRect(tvC * TILE, tvR * TILE, TILE, TILE);
             }
           }
+        }
 
-          // Couch 1 (left side, facing right)
-          g.fillStyle(0x5a6a9a);
-          g.fillRoundedRect(rx + TILE * 0.5, ry + TILE * 0.5, TILE * 1.2, TILE * 2.5, 3);
-          g.fillStyle(0x4a5a8a, 0.5);
-          g.fillRect(rx + TILE * 0.5, ry + TILE * 0.5, TILE * 1.2, TILE * 0.4);
-          g.fillRect(rx + TILE * 0.5, ry + TILE * 2.6, TILE * 1.2, TILE * 0.4);
+        /* ---------------------------------------------------------- */
+        /*  Restrooms furniture                                        */
+        /* ---------------------------------------------------------- */
 
-          // Couch 2 (right side, facing left)
-          g.fillStyle(0x5a6a9a);
-          g.fillRoundedRect(rx + TILE * 4.5, ry + TILE * 0.5, TILE * 1.2, TILE * 2.5, 3);
-          g.fillStyle(0x4a5a8a, 0.5);
-          g.fillRect(rx + TILE * 4.5, ry + TILE * 0.5, TILE * 1.2, TILE * 0.4);
-          g.fillRect(rx + TILE * 4.5, ry + TILE * 2.6, TILE * 1.2, TILE * 0.4);
+        private drawRestroomsFurniture(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
+          if (!cfg.restrooms) return;
+          const room = cfg.restrooms;
 
-          // Coffee table between couches
-          g.fillStyle(0x7a5a3a);
-          g.fillRoundedRect(rx + TILE * 2.2, ry + TILE * 1.0, TILE * 1.8, TILE * 1.5, 2);
-          g.fillStyle(0x9a7a5a, 0.3);
-          g.fillRect(rx + TILE * 2.4, ry + TILE * 1.2, TILE * 1.4, TILE * 0.2);
+          // Two doors (each 1 cell wide, 2 cells tall)
+          const doorR = room.row + 1;
+          const door1C = room.col;
+          const door2C = room.col + 1;
 
-          // Wall-mounted TV (top wall)
-          g.fillStyle(0x111111);
-          g.fillRect(rx + TILE * 2.5, ry + TILE * 0.05, TILE * 2.0, TILE * 0.15);
-          g.fillRect(rx + TILE * 2.2, ry - TILE * 0.2, TILE * 2.6, TILE * 0.2);
-          // TV screen (in wall)
-          try {
-            this.add.image(rx + TILE * 3.5, ry + 2, 'tv')
-              .setOrigin(0.5, 0)
-              .setScale(0.3);
-          } catch {
-            g.fillStyle(0x222244);
-            g.fillRect(rx + TILE * 2.5, ry + 2, TILE * 2, TILE * 0.8);
+          // Door M
+          if (this.isFree(doorR, door1C, 2, 1)) {
+            this.markOccupied(doorR, door1C, 2, 1);
+            g.fillStyle(0x8b6b4a);
+            g.fillRect(door1C * TILE, doorR * TILE, TILE, 2 * TILE);
+            g.lineStyle(0.5, 0x6a4a2a, 0.8);
+            g.strokeRect(door1C * TILE, doorR * TILE, TILE, 2 * TILE);
+            // Handle
+            g.fillStyle(0xd4af37);
+            g.fillCircle(door1C * TILE + TILE - 4, doorR * TILE + TILE, 2);
+            this.add.text(
+              door1C * TILE + TILE / 2, doorR * TILE + TILE / 2,
+              "M", {
+                fontSize: "8px",
+                color: "#ffffff",
+                fontFamily: "sans-serif",
+                fontStyle: "bold",
+              },
+            ).setOrigin(0.5, 0.5);
           }
 
-          // Vending machine (right side)
-          g.fillStyle(0x2244aa);
-          g.fillRect(rx + TILE * 6.5, ry + TILE * 0.3, TILE * 1.2, TILE * 2.0);
-          g.lineStyle(0.5, 0x1a3388, 0.6);
-          g.strokeRect(rx + TILE * 6.5, ry + TILE * 0.3, TILE * 1.2, TILE * 2.0);
-          // Display window
-          g.fillStyle(0xaaddff, 0.3);
-          g.fillRect(rx + TILE * 6.6, ry + TILE * 0.4, TILE * 1.0, TILE * 1.0);
-          // Coloured product rows
-          const vendColors = [0xdd2222, 0x22dd22, 0xddaa22, 0x2222dd];
-          for (let v = 0; v < 4; v++) {
-            g.fillStyle(vendColors[v], 0.7);
-            g.fillRect(rx + TILE * 6.7 + v * TILE * 0.22, ry + TILE * 0.5, TILE * 0.15, TILE * 0.8);
+          // Door F
+          if (this.isFree(doorR, door2C, 2, 1)) {
+            this.markOccupied(doorR, door2C, 2, 1);
+            g.fillStyle(0x8b6b4a);
+            g.fillRect(door2C * TILE, doorR * TILE, TILE, 2 * TILE);
+            g.lineStyle(0.5, 0x6a4a2a, 0.8);
+            g.strokeRect(door2C * TILE, doorR * TILE, TILE, 2 * TILE);
+            g.fillStyle(0xd4af37);
+            g.fillCircle(door2C * TILE + TILE - 4, doorR * TILE + TILE, 2);
+            this.add.text(
+              door2C * TILE + TILE / 2, doorR * TILE + TILE / 2,
+              "F", {
+                fontSize: "8px",
+                color: "#ffffff",
+                fontFamily: "sans-serif",
+                fontStyle: "bold",
+              },
+            ).setOrigin(0.5, 0.5);
           }
-          // Coin slot
-          g.fillStyle(0x333333);
-          g.fillRect(rx + TILE * 7.1, ry + TILE * 1.6, TILE * 0.2, TILE * 0.1);
+        }
 
-          // Potted plants
-          const plantPositions = [
-            [rx + rw - TILE * 0.6, ry + rh - TILE * 0.8],
-            [rx + TILE * 0.4, ry + rh - TILE * 0.6],
+        /* ---------------------------------------------------------- */
+        /*  Plants (1x1 cells in dedicated spots)                      */
+        /* ---------------------------------------------------------- */
+
+        private drawPlants(g: Phaser.GameObjects.Graphics, cfg: OfficeConfig) {
+          const plantSpots = [
+            [0, 3],
+            [cfg.cols - 1, 3],
+            [0, 7],
+            [cfg.cols - 1, 7],
+            [13, cfg.rows - 2],
           ];
-          for (const [px, py] of plantPositions) {
+
+          for (const [c, r] of plantSpots) {
+            if (r >= cfg.rows || c >= cfg.cols) continue;
+            if (!this.isFree(r, c, 1, 1)) continue;
+            this.markOccupied(r, c, 1, 1);
+
+            const px = c * TILE + TILE / 2;
+            const py = r * TILE + TILE / 2;
+            // Pot
             g.fillStyle(0x8a5a3a);
             g.fillRect(px - 3, py + 2, 8, 5);
+            // Foliage
             g.fillStyle(0x4a8a3a, 0.85);
             g.fillCircle(px + 1, py - 2, 5);
             g.fillStyle(0x5aaa4a, 0.7);
             g.fillCircle(px - 2, py, 4);
             g.fillCircle(px + 4, py, 4);
           }
-
-          // Walls and door
-          this.drawRoomWalls(g, room, "left");
-          this.drawRoomLabel(rx, ry - 6, "Lounge");
-        }
-
-        /* ---- Restrooms ---- */
-
-        private drawRestrooms(
-          g: Phaser.GameObjects.Graphics,
-          cfg: OfficeConfig,
-        ) {
-          if (!cfg.restrooms) return;
-          const room = cfg.restrooms;
-          const rx = room.col * TILE;
-          const ry = room.row * TILE;
-          const rw = room.w * TILE;
-          const rh = room.h * TILE;
-
-          // Grey floor
-          for (let r = room.row; r < room.row + room.h; r++) {
-            for (let c = room.col; c < room.col + room.w; c++) {
-              const shade = (r + c) % 2 === 0 ? 0xaaaaaa : 0xa6a6a6;
-              g.fillStyle(shade);
-              g.fillRect(c * TILE, r * TILE, TILE, TILE);
-            }
-          }
-
-          // Two doors side by side
-          const doorW = TILE * 1.0;
-          const doorH = TILE * 1.8;
-          const doorGap = TILE * 0.4;
-          const doorsStartX = rx + (rw - doorW * 2 - doorGap) / 2;
-          const doorY = ry + TILE * 0.8;
-
-          // Door M
-          g.fillStyle(0x8b6b4a);
-          g.fillRect(doorsStartX, doorY, doorW, doorH);
-          g.lineStyle(0.5, 0x6a4a2a, 0.8);
-          g.strokeRect(doorsStartX, doorY, doorW, doorH);
-          // Handle
-          g.fillStyle(0xd4af37);
-          g.fillCircle(doorsStartX + doorW - 4, doorY + doorH * 0.55, 2);
-
-          this.add.text(
-            doorsStartX + doorW / 2, doorY + doorH * 0.3,
-            "M", {
-              fontSize: "8px",
-              color: "#ffffff",
-              fontFamily: "sans-serif",
-              fontStyle: "bold",
-            },
-          ).setOrigin(0.5, 0.5);
-
-          // Door F
-          const door2X = doorsStartX + doorW + doorGap;
-          g.fillStyle(0x8b6b4a);
-          g.fillRect(door2X, doorY, doorW, doorH);
-          g.lineStyle(0.5, 0x6a4a2a, 0.8);
-          g.strokeRect(door2X, doorY, doorW, doorH);
-          g.fillStyle(0xd4af37);
-          g.fillCircle(door2X + doorW - 4, doorY + doorH * 0.55, 2);
-
-          this.add.text(
-            door2X + doorW / 2, doorY + doorH * 0.3,
-            "F", {
-              fontSize: "8px",
-              color: "#ffffff",
-              fontFamily: "sans-serif",
-              fontStyle: "bold",
-            },
-          ).setOrigin(0.5, 0.5);
-
-          // Walls and door
-          this.drawRoomWalls(g, room, "left");
-          this.drawRoomLabel(rx, ry - 6, "Restrooms");
         }
 
         /* ---------------------------------------------------------- */
-        /*  Sprite animations (corrected frame layout)                 */
+        /*  Sprite animations                                          */
         /* ---------------------------------------------------------- */
 
         private createAnimations() {
           for (let i = 0; i < NUM_CHARS; i++) {
             const key = `char_${i}`;
-
-            // Frames 0-2: walk down, 3-6: idle/extra down
-            // Frames 7-9: walk up, 10-13: idle/extra up
-            // Frames 14-16: walk right, 17-20: idle/extra right
-            // Walk-left: walk-right frames + flipX
 
             this.anims.create({
               key: `${key}_walk_down`,
@@ -1000,7 +925,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               repeat: -1,
             });
 
-            // Idle frames: single static frame
             this.anims.create({
               key: `${key}_idle_down`,
               frames: [{ key, frame: 0 }],
@@ -1031,7 +955,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
 
           const agents = snap.agents;
 
-          // Possibly regenerate config if team size changed
           if (agents.length > 0) {
             const newCfg = generateOfficeConfig(Math.max(agents.length, 4));
             if (
@@ -1050,15 +973,14 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             seen.add(agent.agentId);
 
             const pos = agentGridPosition(i, agent.state, this.officeConfig);
-            const targetX = pos.col * TILE + TILE * 0.5;
+            // Strict grid: agent stands at exact col*TILE, row*TILE
+            const targetX = pos.col * TILE + TILE / 2;
             const targetY = pos.row * TILE;
 
             const charKey = `char_${i % NUM_CHARS}`;
             const existing = this.agentContainers.get(agent.agentId);
 
             if (!existing) {
-              // Create new agent
-              // Shadow ellipse under sprite
               const shadow = this.add.ellipse(0, -1, 12, 4, 0x000000, 0.2);
               shadow.setOrigin(0.5, 0.5);
 
@@ -1075,7 +997,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               });
               nameLabel.setOrigin(0.5, 0);
 
-              // Rich speech bubble
               const bubbleInfo = STATE_BUBBLE[agent.state];
               const bubbleText = bubbleInfo
                 ? `${bubbleInfo.emoji} ${bubbleInfo.text}`
@@ -1098,7 +1019,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
               ]);
               container.setDepth(pos.row);
 
-              // Auto-hide bubble after delay
               let bubbleTimer: ReturnType<typeof setTimeout> | null = null;
               if (bubbleText) {
                 bubbleTimer = setTimeout(() => {
@@ -1121,21 +1041,16 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
                 goalCol: pos.col,
               });
             } else {
-              // Update existing agent
               const { container, sprite, bubble } = existing;
 
-              // Update bubble if state changed
               if (existing.lastState !== agent.state) {
-                // Play sound on task completion
                 if (
                   agent.state === "done" ||
                   agent.state === "waiting_for_approval"
                 ) {
                   try {
                     this.sound.play("task-complete", { volume: 0.3 });
-                  } catch {
-                    /* sound may not be loaded */
-                  }
+                  } catch { /* sound may not be loaded */ }
                 }
 
                 const bubbleInfo = STATE_BUBBLE[agent.state];
@@ -1148,7 +1063,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
                 );
                 bubble.setVisible(!!bubbleText);
 
-                // Reset auto-hide timer
                 if (existing.bubbleTimer) {
                   clearTimeout(existing.bubbleTimer);
                   existing.bubbleTimer = null;
@@ -1162,19 +1076,15 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
                 existing.lastState = agent.state;
               }
 
-              // Move if destination changed
               if (existing.goalRow !== pos.row || existing.goalCol !== pos.col) {
                 existing.goalRow = pos.row;
                 existing.goalCol = pos.col;
 
-                // If already walking, interrupt — we'll start a new path
-                // from the agent's current grid cell
                 if (existing.walking) {
                   this.tweens.killTweensOf(container);
                   existing.walking = false;
                 }
 
-                // Compute A* path from current cell to target cell
                 const path = findPath(
                   this.officeConfig.rows,
                   this.officeConfig.cols,
@@ -1186,19 +1096,16 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
                 if (path.length > 1) {
                   this.walkAlongPath(agent.agentId, charKey, path);
                 } else if (path.length === 0) {
-                  // No valid path — teleport as fallback so agent isn't stuck
                   container.x = targetX;
                   container.y = targetY;
                   container.setDepth(pos.row);
                   existing.lastRow = pos.row;
                   existing.lastCol = pos.col;
                 }
-                // path.length === 1 means already at destination — nothing to do
               }
             }
           }
 
-          // Remove agents no longer in snapshot
           for (const [id, entry] of this.agentContainers) {
             if (!seen.has(id)) {
               if (entry.bubbleTimer) clearTimeout(entry.bubbleTimer);
@@ -1221,15 +1128,13 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           if (!entry) return;
 
           entry.walking = true;
-          let stepIndex = 1; // path[0] is the current cell
+          let stepIndex = 1;
 
           const stepNext = () => {
             const freshEntry = this.agentContainers.get(agentId);
             if (!freshEntry || !freshEntry.walking) return;
             if (stepIndex >= path.length) {
-              // Arrived at destination
               freshEntry.walking = false;
-              // Idle in last direction
               const prev = path[stepIndex - 2] ?? path[stepIndex - 1];
               const last = path[stepIndex - 1];
               const dir = this.walkDirection(prev, last);
@@ -1245,7 +1150,7 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
             freshEntry.sprite.setFlipX(dir.flipX);
             freshEntry.sprite.play(`${charKey}_walk_${dir.anim}`);
 
-            const tx = to.col * TILE + TILE * 0.5;
+            const tx = to.col * TILE + TILE / 2;
             const ty = to.row * TILE;
 
             this.tweens.add({
@@ -1261,7 +1166,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
                 e.lastCol = to.col;
                 e.container.setDepth(to.row);
                 stepIndex++;
-                // Small pause between steps for natural look
                 this.time.delayedCall(20, stepNext);
               },
             });
@@ -1270,7 +1174,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           stepNext();
         }
 
-        /** Determine animation direction for a single grid step. */
         private walkDirection(
           from: { row: number; col: number },
           to: { row: number; col: number },
@@ -1280,7 +1183,6 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           if (dr > 0) return { anim: "down", flipX: false };
           if (dr < 0) return { anim: "up", flipX: false };
           if (dc > 0) return { anim: "right", flipX: false };
-          // dc < 0: moving left → use right animation flipped
           return { anim: "right", flipX: true };
         }
 
@@ -1294,10 +1196,9 @@ export function PhaserOffice({ snapshot }: PhaserOfficeProps) {
           const ch = this.scale.height;
           if (!cw || !ch) return;
 
-          // Fit width — fills the container horizontally, clips or scrolls vertically
           const zoomX = cw / this.worldW;
           const zoomY = ch / this.worldH;
-          const zoom = Math.max(zoomX, zoomY * 0.95); // Prefer width-fill, slight vertical squeeze OK
+          const zoom = Math.max(zoomX, zoomY * 0.95);
 
           cam.setZoom(zoom);
           cam.setBounds(0, 0, this.worldW, this.worldH);

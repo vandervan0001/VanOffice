@@ -28,12 +28,17 @@ export interface OfficeConfig {
   hallway: RoomRect | null;
 }
 
-// Desk layout: 4 columns of desks, wider open-plan office
+/**
+ * Desk layout: 3 columns of desks on the LEFT side (cols 0-13).
+ * Each desk is 3 cols wide x 2 rows tall.
+ * Desk columns: [1, 5, 9] — no overlap with right-side rooms.
+ * Row spacing: 4 (2 desk + 1 walkway + 1 gap).
+ */
 function generateDesks(count: number): GridPosition[] {
   const desks: GridPosition[] = [];
-  const DESK_COLS = [1, 8, 15, 22];
+  const DESK_COLS = [1, 5, 9];
   const FIRST_DESK_ROW = 3;
-  const ROW_SPACING = 3; // Compact rows
+  const ROW_SPACING = 4; // 2 desk rows + 1 walkway + 1 buffer
 
   for (let i = 0; i < count; i++) {
     const colIndex = i % DESK_COLS.length;
@@ -47,67 +52,60 @@ function generateDesks(count: number): GridPosition[] {
   return desks;
 }
 
-// Meeting seats arranged around tables
+/**
+ * Meeting seats arranged around tables in meeting rooms.
+ * Room 1: left side. Room 2: also left side (below room 1 area).
+ */
 function generateMeetingSeats(count: number, meetingRow: number): GridPosition[] {
   const seats: GridPosition[] = [];
   const room1Seats = [
-    { row: meetingRow, col: 3, zone: "meeting" as const },
-    { row: meetingRow, col: 7, zone: "meeting" as const },
+    { row: meetingRow + 1, col: 3, zone: "meeting" as const },
+    { row: meetingRow + 1, col: 7, zone: "meeting" as const },
     { row: meetingRow + 2, col: 3, zone: "meeting" as const },
     { row: meetingRow + 2, col: 7, zone: "meeting" as const },
   ];
-  const room2Seats = [
-    { row: meetingRow, col: 17, zone: "meeting" as const },
-    { row: meetingRow, col: 21, zone: "meeting" as const },
-    { row: meetingRow + 2, col: 17, zone: "meeting" as const },
-    { row: meetingRow + 2, col: 21, zone: "meeting" as const },
-  ];
 
   for (let i = 0; i < count; i++) {
-    if (i < room1Seats.length) {
-      seats.push(room1Seats[i]);
-    } else if (i < room1Seats.length + room2Seats.length) {
-      seats.push(room2Seats[i - room1Seats.length]);
-    } else {
-      seats.push(room1Seats[i % room1Seats.length]);
-    }
+    seats.push(room1Seats[i % room1Seats.length]);
   }
   return seats;
 }
 
 /**
  * Generate an office that scales with team size.
- * Wide open-plan layout: 4 desks per row, 28 cols wide.
+ *
+ * Layout:
+ *   Left side (cols 0-13): open-plan desks, meeting room, break room
+ *   Col 14: hallway corridor
+ *   Right side (cols 15-27): boss office, server room, archives, lounge, restrooms
+ *
+ * Every piece is placed at integer grid positions. No fractional math.
  */
 export function generateOfficeConfig(teamSize: number): OfficeConfig {
-  const desksPerRow = 4;
+  const desksPerRow = 3;
   const deskRows = Math.ceil(teamSize / desksPerRow);
   const FIRST_DESK_ROW = 3;
-  const ROW_SPACING = 3; // Compact rows
+  const ROW_SPACING = 4;
   const deskZoneEnd = FIRST_DESK_ROW + deskRows * ROW_SPACING;
   const meetingStartRow = deskZoneEnd;
 
-  const needsSecondMeeting = teamSize > 8;
-  const meetingZoneHeight = 4;
-  const breakRoomHeight = 2;
+  const meetingZoneHeight = 5;
   const breakRoomStartRow = meetingStartRow + meetingZoneHeight;
+  const breakRoomHeight = 3;
   const totalRows = breakRoomStartRow + breakRoomHeight + 1;
   const totalCols = 28;
 
   const desks = generateDesks(teamSize);
-  const meetingSeats = generateMeetingSeats(teamSize, meetingStartRow + 1);
+  const meetingSeats = generateMeetingSeats(teamSize, meetingStartRow);
 
+  // Single meeting room on left side
   const meetingRooms = [
-    { row: meetingStartRow, col: 1, w: 10, h: 4 },
+    { row: meetingStartRow, col: 1, w: 12, h: meetingZoneHeight },
   ];
-  if (needsSecondMeeting) {
-    meetingRooms.push({ row: meetingStartRow, col: 15, w: 10, h: 4 });
-  }
 
   const breakRoom = { row: breakRoomStartRow, col: 1, w: 12, h: breakRoomHeight };
 
   // --- Right-side rooms (cols 15-27) ---
-  // Ensure enough rows for right-side rooms (minimum 16 rows)
   const rightSideMinRows = 16;
   const finalRows = Math.max(totalRows, rightSideMinRows);
 
