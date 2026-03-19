@@ -76,6 +76,12 @@ export function ArtifactPanel({ artifacts, agents, workspaceId, onSnapshotUpdate
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [reviseId, setReviseId] = useState<string | null>(null);
   const [reviseFeedback, setReviseFeedback] = useState("");
+  const [showStatuses, setShowStatuses] = useState<Record<ArtifactStatus, boolean>>({
+    draft: true,
+    needs_review: true,
+    approved: false,
+    superseded: false,
+  });
 
   async function handleValidate(id: string) {
     if (!workspaceId) {
@@ -140,7 +146,11 @@ export function ArtifactPanel({ artifacts, agents, workspaceId, onSnapshotUpdate
   }
 
   const sorted = useMemo(() => {
-    const copy = artifacts.filter((a) => !hiddenIds.has(a.id));
+    const copy = artifacts.filter((a) => {
+      if (hiddenIds.has(a.id)) return false;
+      const effectiveStatus = statusOverrides[a.id] ?? a.status;
+      return showStatuses[effectiveStatus] !== false;
+    });
     copy.sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
@@ -163,7 +173,7 @@ export function ArtifactPanel({ artifacts, agents, workspaceId, onSnapshotUpdate
       return sortDir === "asc" ? cmp : -cmp;
     });
     return copy;
-  }, [artifacts, sortKey, sortDir, hiddenIds]);
+  }, [artifacts, sortKey, sortDir, hiddenIds, showStatuses, statusOverrides]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -198,9 +208,26 @@ export function ArtifactPanel({ artifacts, agents, workspaceId, onSnapshotUpdate
 
   return (
     <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-      <p className="mb-3 text-xs uppercase tracking-widest text-[var(--text-secondary)]">
-        Deliverables
-      </p>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-xs uppercase tracking-widest text-[var(--text-secondary)]">
+          Deliverables
+        </p>
+        <div className="flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+          <span>Show:</span>
+          {(["draft", "needs_review", "approved", "superseded"] as ArtifactStatus[]).map((s) => (
+            <label key={s} className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showStatuses[s] !== false}
+                onChange={() => setShowStatuses((prev) => ({ ...prev, [s]: !prev[s] }))}
+                className="rounded border-[var(--border)] accent-[var(--success)]"
+                style={{ width: 12, height: 12 }}
+              />
+              <span className={STATUS_BADGE[s].text}>{STATUS_BADGE[s].label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">

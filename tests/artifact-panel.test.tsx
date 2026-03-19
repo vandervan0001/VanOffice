@@ -33,7 +33,7 @@ describe("ArtifactPanel", () => {
   it("renders artifact rows in table", () => {
     render(<ArtifactPanel artifacts={[artifact]} />);
     expect(screen.getByText("Research Brief")).toBeTruthy();
-    expect(screen.getByText("Draft")).toBeTruthy();
+    expect(screen.getAllByText("Draft").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("v1")).toBeTruthy();
   });
 });

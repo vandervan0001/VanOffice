@@ -1,11 +1,34 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 
 interface ChatMessage {
   id: string;
   role: "user" | "system";
   text: string;
+}
+
+/** Simple inline markdown → HTML (bold, italic, headers, lists, line breaks) */
+function renderMarkdown(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    // Headers
+    .replace(/^### (.+)$/gm, '<strong style="font-size:0.85em">$1</strong>')
+    .replace(/^## (.+)$/gm, '<strong style="font-size:0.9em">$1</strong>')
+    .replace(/^# (.+)$/gm, '<strong style="font-size:0.95em">$1</strong>')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    // Italic
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    // List items
+    .replace(/^\* (.+)$/gm, '<div style="padding-left:12px">• $1</div>')
+    .replace(/^- (.+)$/gm, '<div style="padding-left:12px">• $1</div>')
+    .replace(/^\d+\. (.+)$/gm, '<div style="padding-left:12px">$&</div>')
+    // Line breaks
+    .replace(/\n\n/g, '<div style="height:8px"></div>')
+    .replace(/\n/g, "<br>");
 }
 
 const WELCOME_SUGGESTIONS = [
@@ -276,9 +299,10 @@ export function CommandInput({
                       ? "bg-[var(--success-bg)] text-[var(--foreground)]"
                       : "bg-[var(--border)]/50 text-[var(--text-secondary)]"
                   }`}
-                >
-                  {msg.text}
-                </div>
+                  {...(msg.role === "system"
+                    ? { dangerouslySetInnerHTML: { __html: renderMarkdown(msg.text) } }
+                    : { children: msg.text })}
+                />
               </div>
             ))}
             <div ref={chatEndRef} />
