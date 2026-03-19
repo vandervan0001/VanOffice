@@ -61,3 +61,7 @@ codex-instructions.md
 *.tsbuildinfo
 next-env.d.ts
 .paperclip-data/
+
+# Tauri
+src-tauri/target/
+src-tauri/binaries/

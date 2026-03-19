@@ -181,6 +181,19 @@ export interface RunEventPayloadMap {
     message: string;
     response: string;
   };
+  "agent.created": {
+    agentId: string;
+    displayName: string;
+    title: string;
+    responsibilities: string;
+    roleTemplateId?: string;
+  };
+  "task.created": {
+    taskId: string;
+    title: string;
+    ownerAgentId: string;
+    artifactId?: string;
+  };
 }
 
 export type RunEventType = keyof RunEventPayloadMap;

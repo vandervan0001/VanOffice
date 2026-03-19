@@ -30,7 +30,9 @@
     "clean:metadata": "find . -path './node_modules' -prune -o -name '._*' -delete",
     "clean:next": "rm -rf .next",
     "paperclip": "npx paperclipai onboard --yes",
-    "dev:paperclip": "PAPERCLIP_URL=http://localhost:3100 node ./node_modules/next/dist/bin/next dev --webpack"
+    "dev:paperclip": "PAPERCLIP_URL=http://localhost:3100 node ./node_modules/next/dist/bin/next dev --webpack",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "better-sqlite3": "^12.8.0",
@@ -46,6 +48,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/cli": "^2.10.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

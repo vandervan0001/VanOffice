@@ -167,7 +167,7 @@ export function ArtifactPanel({ artifacts, agents, workspaceId, onSnapshotUpdate
           cmp = getLatestTimestamp(a) - getLatestTimestamp(b);
           break;
         case "agent":
-          cmp = getAgentLabel(a, agents).localeCompare(getAgent(b));
+          cmp = getAgentLabel(a, agents).localeCompare(getAgentLabel(b, agents));
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;

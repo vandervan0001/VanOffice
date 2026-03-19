@@ -163,6 +163,8 @@ async function executeAction(
           id: newArtifactId,
           title: artifactTitle.charAt(0).toUpperCase() + artifactTitle.slice(1),
           type: "document",
+          schema: "",
+          provenance: [agent.agentId],
           status: "needs_review" as const,
           currentVersion: 1,
           versions: [
@@ -222,7 +224,7 @@ async function executeAction(
         revisedContent = await generateArtifactContent(
           providerId,
           revisionTask,
-          agent ?? null,
+          agent ?? undefined,
           snapshot.workspace.title,
           snapshot.summary ?? "",
         );
@@ -276,7 +278,7 @@ async function executeAction(
         agentId: newAgentId,
         displayName: availableName,
         title: action.newAgentTitle ?? "Specialist",
-        purpose: action.newAgentPurpose ?? "Support the team with specialized work.",
+        responsibilities: action.newAgentPurpose ?? "Support the team with specialized work.",
       });
 
       // Create a task for this agent
@@ -287,9 +289,7 @@ async function executeAction(
         taskId,
         title: `${action.newAgentTitle}: ${action.newAgentPurpose ?? "Specialist work"}`,
         ownerAgentId: newAgentId,
-        description: action.newAgentPurpose ?? "",
-        workType: "writing",
-        linkedArtifactIds: [artifactId],
+        artifactId,
       });
 
       await appendEvent(workspaceId, "artifact.updated", {
@@ -297,6 +297,8 @@ async function executeAction(
           id: artifactId,
           title: action.newAgentTitle ?? "New Deliverable",
           type: "document",
+          schema: "",
+          provenance: [newAgentId],
           status: "draft" as const,
           currentVersion: 1,
           versions: [

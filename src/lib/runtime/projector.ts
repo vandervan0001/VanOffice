@@ -3,6 +3,7 @@ import type {
   ArtifactRecord,
   MissionBrief,
   RunEvent,
+  RunEventPayloadMap,
   TeamMember,
   TeamProposal,
   TaskCard,
@@ -220,6 +221,35 @@ export function projectWorkspaceState(
           state: "done",
         }));
         break;
+      case "agent.created": {
+        const ac = event.payload as RunEventPayloadMap["agent.created"];
+        snapshot.agents.push({
+          agentId: ac.agentId,
+          displayName: ac.displayName,
+          title: ac.title,
+          roleId: ac.roleTemplateId ?? "custom",
+          responsibilities: [ac.responsibilities],
+          rationale: "Hired via chat command",
+          systemPrompt: "",
+          state: "idle",
+        });
+        break;
+      }
+      case "task.created": {
+        const tc = event.payload as RunEventPayloadMap["task.created"];
+        snapshot.tasks.push({
+          id: tc.taskId,
+          title: tc.title,
+          ownerAgentId: tc.ownerAgentId,
+          description: tc.title,
+          dependencies: [],
+          status: "todo",
+          acceptanceCriteria: [],
+          linkedArtifactIds: tc.artifactId ? [tc.artifactId] : [],
+          workType: "writing",
+        });
+        break;
+      }
       default:
         break;
     }
