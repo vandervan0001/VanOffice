@@ -50,9 +50,23 @@ export function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, ArtifactStatus>>({});
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+
+  function handleValidate(id: string) {
+    setStatusOverrides((prev) => ({ ...prev, [id]: "approved" }));
+  }
+
+  function handleArchive(id: string) {
+    setStatusOverrides((prev) => ({ ...prev, [id]: "superseded" }));
+  }
+
+  function handleDelete(id: string) {
+    setHiddenIds((prev) => new Set(prev).add(id));
+  }
 
   const sorted = useMemo(() => {
-    const copy = [...artifacts];
+    const copy = artifacts.filter((a) => !hiddenIds.has(a.id));
     copy.sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
@@ -75,7 +89,7 @@ export function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return copy;
-  }, [artifacts, sortKey, sortDir]);
+  }, [artifacts, sortKey, sortDir, hiddenIds]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -133,14 +147,13 @@ export function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
               <th className="cursor-pointer pb-2 pr-3 font-medium" onClick={() => handleSort("agent")}>
                 Agent{sortIndicator("agent")}
               </th>
-              <th className="pb-2 font-medium">
-                <span className="sr-only">Actions</span>
-              </th>
+              <th className="pb-2 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((artifact) => {
-              const badge = STATUS_BADGE[artifact.status];
+              const effectiveStatus = statusOverrides[artifact.id] ?? artifact.status;
+              const badge = STATUS_BADGE[effectiveStatus];
               const isExpanded = expandedId === artifact.id;
               const currentContent = artifact.versions.find(
                 (v) => v.version === artifact.currentVersion,
@@ -153,34 +166,64 @@ export function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
                 >
                   <td colSpan={6} className="p-0">
                     {/* Row */}
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(artifact.id)}
-                      className="flex w-full items-center gap-0 px-0 py-2 text-left transition hover:bg-[var(--background)]/50"
-                    >
-                      <span className="min-w-0 flex-[3] truncate pr-3 text-sm font-medium text-[var(--foreground)]">
-                        {artifact.title}
-                      </span>
-                      <span className="flex-[2] pr-3">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.bg} ${badge.text}`}
-                        >
-                          {badge.label}
+                    <div className="flex w-full items-center py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpand(artifact.id)}
+                        className="flex min-w-0 flex-1 items-center text-left transition hover:bg-[var(--background)]/50"
+                      >
+                        <span className="min-w-0 flex-[3] truncate pr-3 text-sm font-medium text-[var(--foreground)]">
+                          {artifact.title}
                         </span>
+                        <span className="flex-[2] pr-3">
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium ${badge.bg} ${badge.text}`}
+                          >
+                            {badge.label}
+                          </span>
+                        </span>
+                        <span className="flex-[1] pr-3 text-xs text-[var(--text-secondary)]">
+                          v{artifact.currentVersion}
+                        </span>
+                        <span className="flex-[2] pr-3 text-xs text-[var(--text-secondary)]">
+                          {formatRelativeTime(getLatestTimestamp(artifact))}
+                        </span>
+                        <span className="flex-[2] truncate pr-3 text-xs text-[var(--text-secondary)]">
+                          {getAgent(artifact)}
+                        </span>
+                        <span className="flex-none text-xs text-[var(--text-muted)] transition group-hover:text-[var(--foreground)]">
+                          {isExpanded ? "\u25B4" : "\u25BE"}
+                        </span>
+                      </button>
+                      {/* Action buttons */}
+                      <span className="ml-2 flex flex-none items-center gap-1.5">
+                        {effectiveStatus === "needs_review" && (
+                          <button
+                            type="button"
+                            onClick={() => handleValidate(artifact.id)}
+                            className="rounded-md bg-[var(--success-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--success)] transition hover:bg-[var(--success)]/20"
+                          >
+                            Validate
+                          </button>
+                        )}
+                        {effectiveStatus !== "superseded" && (
+                          <button
+                            type="button"
+                            onClick={() => handleArchive(artifact.id)}
+                            className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 transition hover:bg-gray-200"
+                          >
+                            Archive
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(artifact.id)}
+                          className="rounded-md px-1.5 py-0.5 text-[10px] font-medium text-red-400 transition hover:bg-red-50 hover:text-red-600"
+                        >
+                          Delete
+                        </button>
                       </span>
-                      <span className="flex-[1] pr-3 text-xs text-[var(--text-secondary)]">
-                        v{artifact.currentVersion}
-                      </span>
-                      <span className="flex-[2] pr-3 text-xs text-[var(--text-secondary)]">
-                        {formatRelativeTime(getLatestTimestamp(artifact))}
-                      </span>
-                      <span className="flex-[2] truncate pr-3 text-xs text-[var(--text-secondary)]">
-                        {getAgent(artifact)}
-                      </span>
-                      <span className="flex-none text-xs text-[var(--text-muted)] transition group-hover:text-[var(--foreground)]">
-                        {isExpanded ? "\u25B4" : "\u25BE"}
-                      </span>
-                    </button>
+                    </div>
 
                     {/* Expanded content */}
                     {isExpanded && currentContent && (

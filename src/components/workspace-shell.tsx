@@ -273,7 +273,7 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
 
   // Active workspace: 50/50 layout with margins
   return (
-    <main className="h-screen bg-[var(--background)] p-4">
+    <main className="min-h-screen bg-[var(--background)] p-4">
       {/* Top bar: New team + Paperclip status */}
       <div className="mx-auto mb-2 flex max-w-[1600px] items-center justify-between">
         <div className="flex items-center gap-2">
@@ -305,18 +305,13 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         )}
       </div>
 
-      <div className="mx-auto flex h-[calc(100%-2.5rem)] max-w-[1600px] gap-3">
-        {/* LEFT COLUMN: office + deliverables */}
-        <div className="flex flex-[3] flex-col gap-3">
-          <div className="min-h-[350px] flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
-            <CanvasOffice snapshot={workspace} />
-          </div>
-          <div className="shrink-0">
-            <ArtifactPanel artifacts={workspace.artifacts} />
-          </div>
+      {/* Office + Sidebar — fixed height, fills viewport */}
+      <div className="mx-auto flex max-w-[1600px] gap-3" style={{ height: "calc(100vh - 80px)" }}>
+        {/* Office canvas */}
+        <div className="flex-[3] overflow-hidden rounded-xl border border-[var(--border)]">
+          <CanvasOffice snapshot={workspace} />
         </div>
-
-        {/* RIGHT COLUMN: validations card + chatbox card */}
+        {/* Sidebar: validations + orders */}
         <div className="flex flex-[1] min-w-[300px] max-w-[380px] flex-col gap-3">
           <div className="flex-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <ApprovalSidebar
@@ -329,6 +324,11 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
             <CommandInput suggestions={suggestions} />
           </div>
         </div>
+      </div>
+
+      {/* Deliverables — full width below, scrolls down */}
+      <div className="mx-auto mt-3 max-w-[1600px]">
+        <ArtifactPanel artifacts={workspace.artifacts} />
       </div>
 
       {error && (
