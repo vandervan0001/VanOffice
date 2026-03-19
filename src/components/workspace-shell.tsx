@@ -307,12 +307,12 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
 
       {/* Office + Sidebar — fixed height, fills viewport */}
       <div className="mx-auto flex max-w-[1600px] gap-3" style={{ height: "calc(100vh - 80px)" }}>
-        {/* Office canvas */}
-        <div className="flex-[3] overflow-hidden rounded-xl border border-[var(--border)]">
+        {/* Office canvas — takes most of the space */}
+        <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
           <CanvasOffice snapshot={workspace} />
         </div>
         {/* Sidebar: validations + orders */}
-        <div className="flex flex-[1] min-w-[300px] max-w-[380px] flex-col gap-3">
+        <div className="flex w-[320px] shrink-0 flex-col gap-3">
           <div className="flex-1 overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
             <ApprovalSidebar
               snapshot={workspace}

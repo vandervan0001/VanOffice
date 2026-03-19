@@ -601,8 +601,11 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
     const cw = canvas.width;
     const ch = canvas.height;
 
-    // Integer zoom
-    const zoom = Math.max(1, Math.floor(Math.min(cw / (cfg.cols * TILE), ch / (cfg.rows * TILE))));
+    // Integer zoom — fit the map into the container, no clipping
+    const zoomX = cw / (cfg.cols * TILE);
+    const zoomY = ch / (cfg.rows * TILE);
+    // Use the smaller to fit entirely, but minimum 1
+    const zoom = Math.max(1, Math.floor(Math.min(zoomX, zoomY)));
     s.zoom = zoom;
 
     const tileS = TILE * zoom;
@@ -613,7 +616,7 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
 
     // Clear
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = "#2a2a3a";
+    ctx.fillStyle = "#f0e8d8";
     ctx.fillRect(0, 0, cw, ch);
 
     ctx.imageSmoothingEnabled = false;
