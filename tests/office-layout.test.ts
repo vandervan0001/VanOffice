@@ -8,29 +8,39 @@ import {
 } from "@/lib/state/office-layout";
 import type { AgentState } from "@/lib/types";
 
+/**
+ * agentGridPosition now returns walkable **seat** positions:
+ *   desk seat = desk origin + (row+2, col+1)   (the chair cell)
+ *   meeting seat = directly from meetingSeats array
+ */
+function deskSeat(index: number): GridPosition {
+  const desk = DESK_SLOTS[index % DESK_SLOTS.length];
+  return { row: desk.row + 2, col: desk.col + 1, zone: "desk" };
+}
+
 describe("agentGridPosition", () => {
-  it("returns the assigned desk for idle state", () => {
+  it("returns the desk seat for idle state", () => {
     const pos = agentGridPosition(0, "idle");
     expect(pos.zone).toBe("desk");
-    expect(pos).toEqual(DESK_SLOTS[0]);
+    expect(pos).toEqual(deskSeat(0));
   });
 
-  it("returns the assigned desk for planning state", () => {
+  it("returns the desk seat for planning state", () => {
     const pos = agentGridPosition(1, "planning");
     expect(pos.zone).toBe("desk");
-    expect(pos).toEqual(DESK_SLOTS[1]);
+    expect(pos).toEqual(deskSeat(1));
   });
 
-  it("returns the assigned desk for writing state", () => {
+  it("returns the desk seat for writing state", () => {
     const pos = agentGridPosition(2, "writing");
     expect(pos.zone).toBe("desk");
-    expect(pos).toEqual(DESK_SLOTS[2]);
+    expect(pos).toEqual(deskSeat(2));
   });
 
-  it("returns the assigned desk for researching state", () => {
+  it("returns the desk seat for researching state", () => {
     const pos = agentGridPosition(0, "researching");
     expect(pos.zone).toBe("desk");
-    expect(pos).toEqual(DESK_SLOTS[0]);
+    expect(pos).toEqual(deskSeat(0));
   });
 
   it("returns a meeting seat for meeting state", () => {
@@ -39,22 +49,22 @@ describe("agentGridPosition", () => {
     expect(pos).toEqual(MEETING_SEATS[0]);
   });
 
-  it("returns the assigned desk for waiting_for_approval", () => {
+  it("returns the desk seat for waiting_for_approval", () => {
     const pos = agentGridPosition(3, "waiting_for_approval");
     expect(pos.zone).toBe("desk");
-    expect(pos).toEqual(DESK_SLOTS[3]);
+    expect(pos).toEqual(deskSeat(3));
   });
 
-  it("returns the assigned desk for done state", () => {
+  it("returns the desk seat for done state", () => {
     const pos = agentGridPosition(0, "done");
     expect(pos.zone).toBe("desk");
-    expect(pos).toEqual(DESK_SLOTS[0]);
+    expect(pos).toEqual(deskSeat(0));
   });
 
-  it("wraps desk assignment for agents beyond slot count", () => {
+  it("wraps desk seat assignment for agents beyond slot count", () => {
     const pos = agentGridPosition(5, "idle");
     expect(pos.zone).toBe("desk");
-    expect(pos).toEqual(DESK_SLOTS[5 % DESK_SLOTS.length]);
+    expect(pos).toEqual(deskSeat(5));
   });
 
   it("wraps meeting seat for agents beyond seat count", () => {

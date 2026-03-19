@@ -58,11 +58,14 @@ function generateDesks(count: number): GridPosition[] {
  */
 function generateMeetingSeats(count: number, meetingRow: number): GridPosition[] {
   const seats: GridPosition[] = [];
+  // Seats around the meeting table. The table occupies cols 6-7, rows +1/+2.
+  // Place seats to the LEFT (col 4) and RIGHT (col 9) of the table so they
+  // never overlap furniture and are always walkable.
   const room1Seats = [
-    { row: meetingRow + 1, col: 3, zone: "meeting" as const },
-    { row: meetingRow + 1, col: 7, zone: "meeting" as const },
-    { row: meetingRow + 2, col: 3, zone: "meeting" as const },
-    { row: meetingRow + 2, col: 7, zone: "meeting" as const },
+    { row: meetingRow + 1, col: 4, zone: "meeting" as const },
+    { row: meetingRow + 1, col: 9, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 4, zone: "meeting" as const },
+    { row: meetingRow + 2, col: 9, zone: "meeting" as const },
   ];
 
   for (let i = 0; i < count; i++) {
@@ -133,12 +136,21 @@ export function generateOfficeConfig(teamSize: number): OfficeConfig {
   };
 }
 
-// Backwards-compatible fixed configs for tests
+// Backwards-compatible fixed configs for tests.
+// DESK_SLOTS stores desk furniture origins; agentGridPosition applies
+// the seat offset (+2 row, +1 col) when returning positions.
 export const DESK_SLOTS = generateDesks(5);
 export const MEETING_SEATS = generateMeetingSeats(4, 11);
 
 /**
- * Get grid position for an agent. Works with any team size.
+ * Get the **walkable seat** position for an agent.
+ *
+ * For desk states the seat is 2 rows below and 1 col right of the desk
+ * origin (the chair cell in front of the desk).
+ * For meeting states the seat is taken from the meetingSeats array which
+ * already stores walkable cells around the meeting table.
+ *
+ * Works with any team size.
  */
 export function agentGridPosition(
   agentIndex: number,
@@ -151,7 +163,9 @@ export function agentGridPosition(
   if (agentState === "meeting") {
     return seats[agentIndex % seats.length];
   }
-  return desks[agentIndex % desks.length];
+  // Return the chair/seat cell: desk origin + (row+2, col+1)
+  const desk = desks[agentIndex % desks.length];
+  return { row: desk.row + 2, col: desk.col + 1, zone: "desk" };
 }
 
 // State → bubble icon mapping for the UI layer.
