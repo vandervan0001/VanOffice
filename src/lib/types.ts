@@ -177,6 +177,10 @@ export interface RunEventPayloadMap {
     message: string;
     source: "user" | "system";
   };
+  "command.response": {
+    message: string;
+    response: string;
+  };
 }
 
 export type RunEventType = keyof RunEventPayloadMap;

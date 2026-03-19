@@ -129,7 +129,8 @@ export function CommandInput({
           }),
         });
         if (!res.ok) throw new Error("Command failed");
-        addSystemMessage("Executive summary request logged. The team will process it.");
+        const data = await res.json();
+        addSystemMessage(data.response ?? "Executive summary request logged.");
       } catch (err) {
         addSystemMessage(
           `Failed: ${err instanceof Error ? err.message : "Unknown error"}`,
@@ -176,7 +177,8 @@ export function CommandInput({
         body: JSON.stringify({ message: text, source: "user" }),
       });
       if (!res.ok) throw new Error("Command failed");
-      addSystemMessage(`Command logged: "${text}". The team will process it.`);
+      const data = await res.json();
+      addSystemMessage(data.response ?? `Command logged: "${text}".`);
     } catch (err) {
       addSystemMessage(
         `Failed: ${err instanceof Error ? err.message : "Unknown error"}`,

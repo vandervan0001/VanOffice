@@ -59,12 +59,35 @@ export async function POST(
     let revisedContent = "";
 
     if (isRealProvider) {
-      // Prepend revision feedback to the task for the LLM
+      // Get the previous version's content for context
+      const currentVersionObj = artifact.versions.find(
+        (v) => v.version === artifact.currentVersion,
+      );
+      const previousContent = currentVersionObj?.content ?? "";
+
+      // Prepend structured revision feedback to the task for the LLM
+      const revisionDescription = body.feedback
+        ? [
+            `REVISION REQUEST: The user has reviewed your previous output and requests the following changes:`,
+            `"${body.feedback}"`,
+            ``,
+            `Please revise your deliverable accordingly. Your previous version was:`,
+            `"${previousContent}"`,
+            ``,
+            `Produce an improved version that addresses the feedback.`,
+          ].join("\n")
+        : [
+            `REVISION REQUEST: The user has reviewed your previous output and requests improvements.`,
+            ``,
+            `Please revise your deliverable accordingly. Your previous version was:`,
+            `"${previousContent}"`,
+            ``,
+            `Produce an improved version that refines and enhances the content.`,
+          ].join("\n");
+
       const revisionTask = {
         ...task,
-        description: body.feedback
-          ? `REVISION REQUESTED: ${body.feedback}\n\nOriginal task: ${task.description}`
-          : `REVISION REQUESTED: Please improve and refine the previous output.\n\nOriginal task: ${task.description}`,
+        description: revisionDescription,
       };
 
       revisedContent = await generateArtifactContent(
