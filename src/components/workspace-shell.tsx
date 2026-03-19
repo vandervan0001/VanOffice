@@ -321,14 +321,38 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
             />
           </div>
           <div className="shrink-0 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-            <CommandInput suggestions={suggestions} />
+            <CommandInput
+              suggestions={suggestions}
+              workspaceId={workspaceId}
+              nextPendingGate={
+                workspace?.approvals?.find((g) => g.status === "pending")?.gateType
+              }
+              onApprove={approve}
+              onSnapshotUpdate={() => {
+                if (workspaceId) {
+                  fetchSnapshot(workspaceId)
+                    .then(setWorkspace)
+                    .catch(() => {});
+                }
+              }}
+            />
           </div>
         </div>
       </div>
 
       {/* Deliverables — full width below, scrolls down */}
       <div className="mx-auto mt-3 max-w-[1600px]">
-        <ArtifactPanel artifacts={workspace.artifacts} />
+        <ArtifactPanel
+          artifacts={workspace.artifacts}
+          workspaceId={workspaceId}
+          onSnapshotUpdate={() => {
+            if (workspaceId) {
+              fetchSnapshot(workspaceId)
+                .then(setWorkspace)
+                .catch(() => {});
+            }
+          }}
+        />
       </div>
 
       {error && (

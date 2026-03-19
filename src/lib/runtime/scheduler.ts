@@ -16,7 +16,7 @@ const activeSchedules = new Map<string, ReturnType<typeof setTimeout>[]>();
  * Generate artifact content using the real LLM provider.
  * Falls back to mock content if the provider call fails.
  */
-async function generateArtifactContent(
+export async function generateArtifactContent(
   providerId: string,
   task: TaskCard,
   agent: TeamMember | undefined,
@@ -84,158 +84,148 @@ function artifactFromTask(task: TaskCard, index: number): ArtifactRecord {
   };
 }
 
-function buildExecutionTimeline(snapshot: ReturnType<typeof projectWorkspaceState>) {
-  const events: Array<{
-    delayMs: number;
-    event: Omit<RunEvent, "id" | "workspaceId" | "sequence" | "createdAt">;
-  }> = [];
-  let delayMs = 200;
+/**
+ * Mock execution — runs tasks ONE AT A TIME with visible delays
+ * so the office canvas can animate agents walking, discussing, typing.
+ */
+async function executeMockSequential(
+  workspaceId: string,
+  snapshot: ReturnType<typeof projectWorkspaceState>,
+) {
+  const cancelRef = { cancelled: false };
+  const timer = setTimeout(() => {}, 0);
+  activeSchedules.set(workspaceId, [timer]);
 
-  events.push({
-    delayMs,
-    event: {
-      type: "run.started",
-      payload: { startedBy: "system" },
-    },
-  });
+  try {
+    // Run started
+    await appendEvent(workspaceId, "run.started", { startedBy: "system" });
+    await delay(1000);
+    if (cancelRef.cancelled) return;
 
-  delayMs += 800;
-  const kickoffMeetingId = nanoid();
-  events.push({
-    delayMs,
-    event: {
-      type: "meeting.started",
-      payload: {
-        meetingId: kickoffMeetingId,
-        title: "Kickoff alignment",
-        participantAgentIds: snapshot.agents.map((agent) => agent.agentId),
-      },
-    },
-  });
+    // Kickoff meeting
+    const kickoffId = nanoid();
+    await appendEvent(workspaceId, "meeting.started", {
+      meetingId: kickoffId,
+      title: "Kickoff alignment",
+      participantAgentIds: snapshot.agents.map((a) => a.agentId),
+    });
 
-  delayMs += 1200;
-  events.push({
-    delayMs,
-    event: {
-      type: "meeting.ended",
-      payload: { meetingId: kickoffMeetingId },
-    },
-  });
+    await delay(3000); // Let agents walk to meeting room
+    if (cancelRef.cancelled) return;
 
-  snapshot.tasks.forEach((task, index) => {
-    delayMs += 700;
-    events.push({
-      delayMs,
-      event: {
-        type: "task.started",
-        payload: {
-          taskId: task.id,
-          agentId: task.ownerAgentId,
-          state: task.workType,
-        },
+    await appendEvent(workspaceId, "meeting.ended", { meetingId: kickoffId });
+    await delay(2000); // Pause between phases
+    if (cancelRef.cancelled) return;
+
+    // Execute each task ONE AT A TIME with visible pacing
+    for (let i = 0; i < snapshot.tasks.length; i++) {
+      if (cancelRef.cancelled) return;
+      const task = snapshot.tasks[i];
+
+      // 1. Emit task.started — agent walks to desk / starts work
+      await appendEvent(workspaceId, "task.started", {
+        taskId: task.id,
+        agentId: task.ownerAgentId,
+        state: task.workType,
+      });
+
+      // 2. Wait 3s minimum — animation: agent walks to desk, opens laptop
+      await delay(3000);
+      if (cancelRef.cancelled) return;
+
+      // 3. "Generate" content (mock — no LLM call)
+      const artifact = artifactFromTask(task, i);
+      await appendEvent(workspaceId, "artifact.updated", {
+        artifact,
+      });
+
+      // 4. Wait 2s after content — animation: agent types at desk
+      await delay(2000);
+      if (cancelRef.cancelled) return;
+
+      // 5. Emit task.completed
+      await appendEvent(workspaceId, "task.completed", {
+        taskId: task.id,
+        agentId: task.ownerAgentId,
+      });
+
+      // 6. Wait 1s before next task
+      await delay(1000);
+    }
+
+    if (cancelRef.cancelled) return;
+
+    // Phase pause before review
+    await delay(2000);
+
+    // Review meeting
+    const reviewId = nanoid();
+    await appendEvent(workspaceId, "meeting.started", {
+      meetingId: reviewId,
+      title: "Review sync",
+      participantAgentIds: snapshot.agents.map((a) => a.agentId),
+    });
+
+    await delay(3000);
+    if (cancelRef.cancelled) return;
+
+    // Final deliverable
+    await appendEvent(workspaceId, "artifact.updated", {
+      artifact: {
+        id: "final-deliverable",
+        title: "Final Team Packet",
+        type: "final-report",
+        status: "needs_review" as const,
+        schema: "markdown-v1",
+        provenance: snapshot.tasks.map((t) => t.id),
+        currentVersion: 1,
+        versions: [
+          {
+            version: 1,
+            createdAt: Date.now(),
+            content: [
+              "# Final Team Packet",
+              "",
+              "## Mission Summary",
+              snapshot.summary ?? "No summary generated.",
+              "",
+              "## Assumptions",
+              ...snapshot.assumptions.map((a) => `- ${a}`),
+              "",
+              "## Recommended Outputs",
+              ...snapshot.expectedOutputs.map((o) => `- ${o}`),
+            ].join("\n"),
+            notes: "Combined review draft assembled by the reviewer.",
+            sourceTaskIds: snapshot.tasks.map((t) => t.id),
+            citations: [],
+          },
+        ],
       },
     });
 
-    delayMs += 1100;
-    events.push({
-      delayMs,
-      event: {
-        type: "artifact.updated",
-        payload: {
-          artifact: artifactFromTask(task, index),
-        },
-      },
+    await delay(2000);
+    if (cancelRef.cancelled) return;
+
+    await appendEvent(workspaceId, "meeting.ended", { meetingId: reviewId });
+    await delay(1000);
+
+    // Request final approval
+    await appendEvent(workspaceId, "approval.requested", {
+      gateType: "final_deliverables",
+      message: "Review and approve the deliverables before marking the run complete.",
     });
+    await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
 
-    delayMs += 700;
-    events.push({
-      delayMs,
-      event: {
-        type: "task.completed",
-        payload: {
-          taskId: task.id,
-          agentId: task.ownerAgentId,
-        },
-      },
+  } catch (err) {
+    console.error("[scheduler] Mock sequential execution failed:", err);
+    await appendEvent(workspaceId, "approval.requested", {
+      gateType: "final_deliverables",
+      message: `Execution encountered errors. Error: ${err instanceof Error ? err.message : "Unknown"}`,
     });
-  });
-
-  delayMs += 1000;
-  const reviewMeetingId = nanoid();
-  events.push({
-    delayMs,
-    event: {
-      type: "meeting.started",
-      payload: {
-        meetingId: reviewMeetingId,
-        title: "Review sync",
-        participantAgentIds: snapshot.agents.map((agent) => agent.agentId),
-      },
-    },
-  });
-
-  delayMs += 1200;
-  events.push({
-    delayMs,
-    event: {
-      type: "artifact.updated",
-      payload: {
-        artifact: {
-          id: "final-deliverable",
-          title: "Final Team Packet",
-          type: "final-report",
-          status: "needs_review",
-          schema: "markdown-v1",
-          provenance: snapshot.tasks.map((task) => task.id),
-          currentVersion: 1,
-          versions: [
-            {
-              version: 1,
-              createdAt: Date.now(),
-              content: [
-                "# Final Team Packet",
-                "",
-                "## Mission Summary",
-                snapshot.summary ?? "No summary generated.",
-                "",
-                "## Assumptions",
-                ...snapshot.assumptions.map((assumption) => `- ${assumption}`),
-                "",
-                "## Recommended Outputs",
-                ...snapshot.expectedOutputs.map((output) => `- ${output}`),
-              ].join("\n"),
-              notes: "Combined review draft assembled by the reviewer.",
-              sourceTaskIds: snapshot.tasks.map((task) => task.id),
-              citations: [],
-            },
-          ],
-        },
-      },
-    },
-  });
-
-  delayMs += 800;
-  events.push({
-    delayMs,
-    event: {
-      type: "meeting.ended",
-      payload: { meetingId: reviewMeetingId },
-    },
-  });
-
-  delayMs += 500;
-  events.push({
-    delayMs,
-    event: {
-      type: "approval.requested",
-      payload: {
-        gateType: "final_deliverables",
-        message: "Review and approve the deliverables before marking the run complete.",
-      },
-    },
-  });
-
-  return events;
+    await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
+  } finally {
+    activeSchedules.delete(workspaceId);
+  }
 }
 
 export async function scheduleWorkspaceExecution(workspaceId: string) {
@@ -259,23 +249,8 @@ export async function scheduleWorkspaceExecution(workspaceId: string) {
     // Real LLM execution — run tasks sequentially with actual API calls
     scheduleRealExecution(workspaceId, snapshot, providerId);
   } else {
-    // Mock execution — use pre-built timeline with fixed delays
-    const timeline = buildExecutionTimeline(snapshot);
-    const timers: ReturnType<typeof setTimeout>[] = [];
-
-    timeline.forEach((entry) => {
-      const timer = setTimeout(async () => {
-        await appendEvent(workspaceId, entry.event.type, entry.event.payload as never);
-        if (entry.event.type === "approval.requested") {
-          await setWorkspaceStatus(workspaceId, "awaiting_final_approval");
-          activeSchedules.delete(workspaceId);
-        }
-      }, entry.delayMs);
-
-      timers.push(timer);
-    });
-
-    activeSchedules.set(workspaceId, timers);
+    // Mock execution — sequential with visible delays for animation
+    executeMockSequential(workspaceId, snapshot);
   }
 }
 
@@ -296,6 +271,8 @@ async function scheduleRealExecution(
   try {
     // Kickoff meeting
     await appendEvent(workspaceId, "run.started", { startedBy: "system" });
+    await delay(1000);
+    if (cancelRef.cancelled) return;
 
     const kickoffId = nanoid();
     await appendEvent(workspaceId, "meeting.started", {
@@ -304,12 +281,14 @@ async function scheduleRealExecution(
       participantAgentIds: snapshot.agents.map((a) => a.agentId),
     });
 
-    await delay(2000);
+    await delay(3000); // Let agents walk to meeting room
     if (cancelRef.cancelled) return;
 
     await appendEvent(workspaceId, "meeting.ended", { meetingId: kickoffId });
+    await delay(2000); // Pause between phases
+    if (cancelRef.cancelled) return;
 
-    // Execute each task with real LLM
+    // Execute each task ONE AT A TIME with visible pacing
     const missionGoal = snapshot.workspace.title;
     const missionBrief = snapshot.summary ?? "";
 
@@ -319,17 +298,18 @@ async function scheduleRealExecution(
       const task = snapshot.tasks[i];
       const agent = snapshot.agents.find((a) => a.agentId === task.ownerAgentId);
 
-      // Task started
+      // 1. Emit task.started — agent walks to desk / starts work type
       await appendEvent(workspaceId, "task.started", {
         taskId: task.id,
         agentId: task.ownerAgentId,
         state: task.workType,
       });
 
-      await delay(500);
+      // 2. Wait 3s MINIMUM — animation: agent walks to desk, opens laptop
+      await delay(3000);
       if (cancelRef.cancelled) return;
 
-      // Generate real content via LLM
+      // 3. Call LLM for content generation
       console.log(`[scheduler] Calling ${providerId} for task: ${task.title}`);
       const content = await generateArtifactContent(
         providerId, task, agent, missionGoal, missionBrief,
@@ -341,7 +321,6 @@ async function scheduleRealExecution(
         .replace(/-/g, " ")
         .replace(/\b\w/g, (c) => c.toUpperCase());
 
-      // Use LLM content or fall back to mock
       const finalContent = content || artifactFromTask(task, i).versions[0].content;
 
       await appendEvent(workspaceId, "artifact.updated", {
@@ -364,19 +343,24 @@ async function scheduleRealExecution(
         },
       });
 
-      await delay(300);
+      // 4. Wait 2s after LLM returns — animation: agent types at desk
+      await delay(2000);
       if (cancelRef.cancelled) return;
 
-      // Task completed
+      // 5. Emit task.completed
       await appendEvent(workspaceId, "task.completed", {
         taskId: task.id,
         agentId: task.ownerAgentId,
       });
 
-      await delay(500);
+      // 6. Wait 1s before starting next task
+      await delay(1000);
     }
 
     if (cancelRef.cancelled) return;
+
+    // Phase pause before review
+    await delay(2000);
 
     // Review meeting
     const reviewId = nanoid();
@@ -386,7 +370,7 @@ async function scheduleRealExecution(
       participantAgentIds: snapshot.agents.map((a) => a.agentId),
     });
 
-    await delay(2000);
+    await delay(3000); // Let agents walk to meeting room
     if (cancelRef.cancelled) return;
 
     // Final deliverable — compile all artifacts
@@ -420,9 +404,11 @@ async function scheduleRealExecution(
       },
     });
 
-    await appendEvent(workspaceId, "meeting.ended", { meetingId: reviewId });
+    await delay(2000);
+    if (cancelRef.cancelled) return;
 
-    await delay(500);
+    await appendEvent(workspaceId, "meeting.ended", { meetingId: reviewId });
+    await delay(1000);
 
     // Request final approval
     await appendEvent(workspaceId, "approval.requested", {

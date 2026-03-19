@@ -8,6 +8,8 @@ import type { ArtifactRecord, ArtifactStatus } from "@/lib/types";
 
 interface ArtifactPanelProps {
   artifacts: ArtifactRecord[];
+  workspaceId?: string;
+  onSnapshotUpdate?: () => void;
 }
 
 type SortKey = "title" | "status" | "version" | "updatedAt" | "agent";
@@ -46,15 +48,68 @@ function getAgent(artifact: ArtifactRecord): string {
   return artifact.provenance?.[0] ?? "-";
 }
 
-export function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
+export function ArtifactPanel({ artifacts, workspaceId, onSnapshotUpdate }: ArtifactPanelProps) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statusOverrides, setStatusOverrides] = useState<Record<string, ArtifactStatus>>({});
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [reviseId, setReviseId] = useState<string | null>(null);
+  const [reviseFeedback, setReviseFeedback] = useState("");
 
-  function handleValidate(id: string) {
-    setStatusOverrides((prev) => ({ ...prev, [id]: "approved" }));
+  async function handleValidate(id: string) {
+    if (!workspaceId) {
+      // Fallback: local-only status change
+      setStatusOverrides((prev) => ({ ...prev, [id]: "approved" }));
+      return;
+    }
+
+    setBusyAction(id);
+    try {
+      const res = await fetch(
+        `/api/workspaces/${workspaceId}/artifacts/${id}/status`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "approved" }),
+        },
+      );
+      if (res.ok) {
+        setStatusOverrides((prev) => ({ ...prev, [id]: "approved" }));
+        onSnapshotUpdate?.();
+      }
+    } catch {
+      // Fallback to local
+      setStatusOverrides((prev) => ({ ...prev, [id]: "approved" }));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleRevise(id: string) {
+    if (!workspaceId) return;
+
+    setBusyAction(id);
+    try {
+      const res = await fetch(`/api/workspaces/${workspaceId}/revise`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          artifactId: id,
+          feedback: reviseFeedback || undefined,
+        }),
+      });
+      if (res.ok) {
+        setReviseId(null);
+        setReviseFeedback("");
+        onSnapshotUpdate?.();
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   function handleArchive(id: string) {
@@ -155,9 +210,14 @@ export function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
               const effectiveStatus = statusOverrides[artifact.id] ?? artifact.status;
               const badge = STATUS_BADGE[effectiveStatus];
               const isExpanded = expandedId === artifact.id;
+              const isBusy = busyAction === artifact.id;
+              const isRevising = reviseId === artifact.id;
               const currentContent = artifact.versions.find(
                 (v) => v.version === artifact.currentVersion,
               )?.content;
+
+              const canValidate = effectiveStatus === "needs_review" || effectiveStatus === "draft";
+              const canRevise = effectiveStatus !== "approved" && effectiveStatus !== "superseded";
 
               return (
                 <tr
@@ -197,13 +257,24 @@ export function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
                       </button>
                       {/* Action buttons */}
                       <span className="ml-2 flex flex-none items-center gap-1.5">
-                        {effectiveStatus === "needs_review" && (
+                        {canValidate && (
                           <button
                             type="button"
+                            disabled={isBusy}
                             onClick={() => handleValidate(artifact.id)}
-                            className="rounded-md bg-[var(--success-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--success)] transition hover:bg-[var(--success)]/20"
+                            className="rounded-md bg-[var(--success-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--success)] transition hover:bg-[var(--success)]/20 disabled:opacity-40"
                           >
-                            Validate
+                            {isBusy ? "..." : "Validate"}
+                          </button>
+                        )}
+                        {canRevise && (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => setReviseId(isRevising ? null : artifact.id)}
+                            className="rounded-md bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600 transition hover:bg-orange-100 disabled:opacity-40"
+                          >
+                            Revise
                           </button>
                         )}
                         {effectiveStatus !== "superseded" && (
@@ -224,6 +295,43 @@ export function ArtifactPanel({ artifacts }: ArtifactPanelProps) {
                         </button>
                       </span>
                     </div>
+
+                    {/* Revise feedback input */}
+                    {isRevising && (
+                      <div className="flex items-center gap-2 border-t border-[var(--border)]/30 bg-orange-50/30 px-3 py-2">
+                        <input
+                          type="text"
+                          value={reviseFeedback}
+                          onChange={(e) => setReviseFeedback(e.target.value)}
+                          placeholder="Optional revision feedback..."
+                          className="flex-1 rounded-lg border border-orange-200 bg-white px-2 py-1 text-xs text-[var(--foreground)] placeholder:text-orange-300 focus:border-orange-400 focus:outline-none"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleRevise(artifact.id);
+                            }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleRevise(artifact.id)}
+                          className="rounded-md bg-orange-500 px-3 py-1 text-[10px] font-medium text-white transition hover:bg-orange-600 disabled:opacity-40"
+                        >
+                          {isBusy ? "Revising..." : "Send revision"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReviseId(null);
+                            setReviseFeedback("");
+                          }}
+                          className="rounded-md px-2 py-1 text-[10px] text-gray-400 hover:text-gray-600"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
 
                     {/* Expanded content */}
                     {isExpanded && currentContent && (

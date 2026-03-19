@@ -173,6 +173,10 @@ export interface RunEventPayloadMap {
   "run.completed": {
     outcome: string;
   };
+  "command.received": {
+    message: string;
+    source: "user" | "system";
+  };
 }
 
 export type RunEventType = keyof RunEventPayloadMap;
