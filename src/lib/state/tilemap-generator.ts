@@ -235,14 +235,14 @@ export function generateTilemapJSON(
   placeRoomWalls(walls, config.lounge, "left");
   placeRoomWalls(walls, config.restrooms, "left");
 
-  // Meeting room walls (doorway at bottom)
+  // Meeting room walls (doorway at top — agents enter from desk area above)
   for (const room of config.meetingRooms) {
-    placeRoomWalls(walls, room, "bottom");
+    placeRoomWalls(walls, room, "top");
   }
 
-  // Break room walls (doorway at bottom)
+  // Break room walls (doorway at top — agents enter from desk area)
   if (config.breakRoom) {
-    placeRoomWalls(walls, config.breakRoom, "bottom");
+    placeRoomWalls(walls, config.breakRoom, "top");
   }
 
   // ================================================================
@@ -406,32 +406,28 @@ export function generateTilemapJSON(
     }
   }
 
-  // Unblock desk seats (agent sits at desk.row+1, desk.col+1)
-  for (const desk of config.desks) {
-    setTile(collision, desk.row + 1, desk.col + 1, 0);
-    // Clear cell in front of desk for walking
-    setTile(collision, desk.row + 2, desk.col + 1, 0);
-  }
-
-  // Unblock meeting seats (only if not overlapping furniture like the table)
-  for (const seat of config.meetingSeats) {
-    const furnGid = getTile(furniture, seat.row, seat.col);
-    if (furnGid === 0) {
-      setTile(collision, seat.row, seat.col, 0);
-    }
-  }
-
-  // Unblock hallway (only cells that have no wall and no furniture)
-  if (config.hallway) {
-    for (let r = config.hallway.row; r < config.hallway.row + config.hallway.h; r++) {
-      for (let c = config.hallway.col; c < config.hallway.col + config.hallway.w; c++) {
-        const wallGid = getTile(walls, r, c);
-        const furnGid = getTile(furniture, r, c);
-        if ((wallGid === 0 || wallGid === gid(TILE_DOOR_GAP)) && furnGid === 0) {
-          setTile(collision, r, c, 0);
-        }
+  // UNBLOCK: any cell that has floor but no furniture and no solid wall is walkable
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const floorGid = getTile(floor, r, c);
+      const wallGid = getTile(walls, r, c);
+      const furnGid = getTile(furniture, r, c);
+      // Has floor, no furniture, and no solid wall (or is a door gap) → walkable
+      if (floorGid !== 0 && furnGid === 0 && (wallGid === 0 || wallGid === gid(TILE_DOOR_GAP))) {
+        setTile(collision, r, c, 0);
       }
     }
+  }
+
+  // Also unblock desk seats explicitly (they have furniture=chair but must be walkable)
+  for (const desk of config.desks) {
+    setTile(collision, desk.row + 1, desk.col + 1, 0); // chair cell
+    setTile(collision, desk.row + 2, desk.col + 1, 0); // walkway in front
+  }
+
+  // Unblock meeting seats
+  for (const seat of config.meetingSeats) {
+    setTile(collision, seat.row, seat.col, 0);
   }
 
   // ================================================================
@@ -481,22 +477,34 @@ function fillRoomFloor(layer: TiledLayerJSON, room: RoomRect, tileIndex: number)
 function placeRoomWalls(
   layer: TiledLayerJSON,
   room: RoomRect | null,
-  doorSide: "left" | "bottom",
+  doorSide: "left" | "bottom" | "top",
 ) {
   if (!room) return;
 
   const { row, col, w, h } = room;
 
   // Top wall
-  for (let c = col; c < col + w; c++) {
-    setTile(layer, row, c, gid(TILE_WALL_ROOM));
+  if (doorSide === "top") {
+    const doorMid = col + Math.floor(w / 2);
+    for (let c = col; c < col + w; c++) {
+      // 3-cell wide door gap centered
+      if (c >= doorMid - 1 && c <= doorMid + 1) {
+        setTile(layer, row, c, gid(TILE_DOOR_GAP));
+      } else {
+        setTile(layer, row, c, gid(TILE_WALL_ROOM));
+      }
+    }
+  } else {
+    for (let c = col; c < col + w; c++) {
+      setTile(layer, row, c, gid(TILE_WALL_ROOM));
+    }
   }
 
   // Bottom wall
   if (doorSide === "bottom") {
-    const doorCol = col + Math.floor(w / 2);
+    const doorMid = col + Math.floor(w / 2);
     for (let c = col; c < col + w; c++) {
-      if (c === doorCol || c === doorCol - 1) {
+      if (c >= doorMid - 1 && c <= doorMid + 1) {
         setTile(layer, row + h - 1, c, gid(TILE_DOOR_GAP));
       } else {
         setTile(layer, row + h - 1, c, gid(TILE_WALL_ROOM));

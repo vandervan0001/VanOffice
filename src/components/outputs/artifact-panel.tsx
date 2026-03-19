@@ -6,8 +6,15 @@ import remarkGfm from "remark-gfm";
 
 import type { ArtifactRecord, ArtifactStatus } from "@/lib/types";
 
+interface AgentInfo {
+  id: string;
+  name: string;
+  roleTitle: string;
+}
+
 interface ArtifactPanelProps {
   artifacts: ArtifactRecord[];
+  agents?: AgentInfo[];
   workspaceId?: string;
   onSnapshotUpdate?: () => void;
 }
@@ -44,11 +51,23 @@ function getLatestTimestamp(artifact: ArtifactRecord): number {
   return current?.createdAt ?? 0;
 }
 
-function getAgent(artifact: ArtifactRecord): string {
-  return artifact.provenance?.[0] ?? "-";
+function getAgentLabel(artifact: ArtifactRecord, agents?: AgentInfo[]): string {
+  const provId = artifact.provenance?.[0];
+  if (!provId) return "-";
+  // Try to find agent by matching provenance to agent list
+  if (agents?.length) {
+    const match = agents.find(a => a.id === provId);
+    if (match) return match.name;
+  }
+  // Fallback: extract agent name from task title if it contains ":"
+  // e.g. "Research Analyst: Gather evidence..." → "Research Analyst"
+  const taskTitle = artifact.title;
+  if (taskTitle.includes(":")) return taskTitle.split(":")[0].trim();
+  // Last fallback: use artifact title as agent name
+  return taskTitle;
 }
 
-export function ArtifactPanel({ artifacts, workspaceId, onSnapshotUpdate }: ArtifactPanelProps) {
+export function ArtifactPanel({ artifacts, agents, workspaceId, onSnapshotUpdate }: ArtifactPanelProps) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -138,7 +157,7 @@ export function ArtifactPanel({ artifacts, workspaceId, onSnapshotUpdate }: Arti
           cmp = getLatestTimestamp(a) - getLatestTimestamp(b);
           break;
         case "agent":
-          cmp = getAgent(a).localeCompare(getAgent(b));
+          cmp = getAgentLabel(a, agents).localeCompare(getAgent(b));
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;
@@ -249,7 +268,7 @@ export function ArtifactPanel({ artifacts, workspaceId, onSnapshotUpdate }: Arti
                           {formatRelativeTime(getLatestTimestamp(artifact))}
                         </span>
                         <span className="flex-[2] truncate pr-3 text-xs text-[var(--text-secondary)]">
-                          {getAgent(artifact)}
+                          {getAgentLabel(artifact, agents)}
                         </span>
                         <span className="flex-none text-xs text-[var(--text-muted)] transition group-hover:text-[var(--foreground)]">
                           {isExpanded ? "\u25B4" : "\u25BE"}
