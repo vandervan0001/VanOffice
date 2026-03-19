@@ -17,21 +17,24 @@ This is an early MVP. Here is what actually works and what does not:
 
 **Working:**
 - Generative team composition: the LLM reads your brief and creates custom roles (not from a fixed catalog)
-- Sequential agent execution: agents execute one at a time, each producing a real LLM-generated deliverable
-- Real LLM providers: Gemini and Anthropic (Claude) are tested and functional; OpenAI and Ollama adapters exist
-- Event-sourced runtime: every state change is an append-only event stored in SQLite
-- Three approval gates: team proposal, execution plan, final deliverables
+- Sequential agent execution: agents execute one at a time, each producing real LLM-generated deliverables
+- Functional chat coordinator: give orders like "Draft a SWOT", "Hire a SEO specialist", "Revise the marketing plan" — the coordinator picks the right agent and executes
+- Dynamic agent hiring: the coordinator can create new agents on-the-fly based on your needs
+- Real LLM providers: Gemini and Anthropic (Claude) tested and functional; OpenAI and Ollama adapters exist
+- Event-sourced runtime with three approval gates (team, execution plan, final deliverables)
+- Deliverable status filters: hide approved items, focus on drafts and items needing review
+- Markdown-formatted chat responses with proper bold, lists, and structure
+- Deliverable revision with specific feedback injection
+- Export all deliverables as markdown
+- Workspace auto-save and resume
 - 10 mission presets (marketing, sales, tech, advisory, etc.)
-- Chat input sends instructions to a coordinator LLM and displays responses
-- Deliverable revision with feedback injection
-- Pixel office renders agents at desks with state bubbles and A* pathfinding walk animations
+- Pixel office with agents at desks, state bubbles, and A* pathfinding
 
 **Limitations:**
 - Agents execute sequentially (no parallel execution yet)
-- Phaser office has spacing/scaling issues at larger team sizes
-- Paperclip AI integration is wired but not fully tested end-to-end
+- Walk animations are implemented but may not always be visible in real-time
 - No web research, MCP tools, or document analysis yet
-- No real-time agent micro-management or task reassignment
+- No standalone installer yet (requires Node.js to run)
 
 ---
 
@@ -154,32 +157,39 @@ npm run build         # Production build
 
 - [x] Generative team composition from natural language briefs
 - [x] 10 business presets (marketing, sales, tech, advisory, etc.)
-- [x] Real LLM execution with Gemini and Anthropic
-- [x] Phaser.js 3 pixel office with LPC spritesheets
-- [x] A* pathfinding and walk animations for agents
-- [x] Agent state bubbles (research, writing, planning, waiting, done)
-- [x] Event-sourced runtime with three approval gates
-- [x] Chat input with LLM coordinator responses
+- [x] Real LLM execution with Gemini and Anthropic (Claude)
+- [x] Functional chat coordinator — sends real orders to agents (run, revise, hire)
+- [x] Deliverable status filters (Draft, Needs review, Approved — hide/show)
+- [x] Markdown-formatted chat responses
 - [x] Deliverable revision with feedback injection
-- [x] Scalable office layout (desks, meeting rooms, break room, boss office, server room, etc.)
+- [x] Dynamic agent hiring via chat ("I need a SEO specialist")
+- [x] New artifacts created per command (not overwriting existing ones)
+- [x] Canvas pixel office with LPC spritesheets and A* pathfinding
+- [x] Scalable office (desks, meeting rooms, boss office, server room, archives, lounge, WC)
+- [x] Event-sourced runtime with three approval gates
+- [x] Export all deliverables as markdown
+- [x] Workspace save/resume (auto-persist to SQLite)
+- [x] Paperclip AI orchestration (optional sidecar)
 - [x] Mock provider for UI testing without API keys
 
 ### Next up
 
-- [ ] Fix Phaser office spacing/scaling at larger team sizes
-- [ ] Parallel agent execution
-- [ ] Verify Paperclip end-to-end execution
-- [ ] Web research tool (Playwright browser automation)
+- [ ] **One-click installer** — standalone `.exe` / `.app` / `.AppImage` (Electron or Tauri) so non-developers can launch without Node.js, npm, or terminal
+- [ ] Parallel agent execution (multiple agents working simultaneously)
+- [ ] Web research tool (Playwright browser automation or API-based search)
 - [ ] MCP tool server integration
 - [ ] Export deliverables as PDF/DOCX
+- [ ] Tile-by-tile walk animations visible in real-time
 
 ### Future
 
-- [ ] Real-time agent micro-management (click agent, redirect tasks)
-- [ ] Multi-workspace support
+- [ ] Real-time agent micro-management (click agent, see task, redirect)
+- [ ] Question cascade — agents ask the user questions via popup when stuck
+- [ ] Multi-workspace support (run several teams in parallel)
 - [ ] Run history and replay mode
 - [ ] Plugin system for external tools (Slack, Jira, GitHub)
-- [ ] Custom office layouts
+- [ ] Custom office layouts (tilemap editor)
+- [ ] Voice briefs — describe your mission by speaking
 
 ---
 
