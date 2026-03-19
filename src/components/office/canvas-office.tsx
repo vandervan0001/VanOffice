@@ -601,11 +601,11 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
     const cw = canvas.width;
     const ch = canvas.height;
 
-    // Integer zoom — fit the map into the container, no clipping
+    // Integer zoom — fill the container aggressively (slight edge clipping OK)
     const zoomX = cw / (cfg.cols * TILE);
     const zoomY = ch / (cfg.rows * TILE);
-    // Use the smaller to fit entirely, but minimum 1
-    const zoom = Math.max(1, Math.floor(Math.min(zoomX, zoomY)));
+    // Ceil with 0.95 margin — fills screen better than floor
+    const zoom = Math.max(1, Math.ceil(Math.min(zoomX * 0.95, zoomY * 0.95)));
     s.zoom = zoom;
 
     const tileS = TILE * zoom;
