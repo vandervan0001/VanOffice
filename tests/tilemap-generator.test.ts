@@ -144,16 +144,15 @@ describe("tilemap-generator", () => {
   // Walls
   // ------------------------------------------------------------------
 
-  it("back wall rows 0-1 have wall tiles", () => {
+  it("back wall row 0 has wall tiles", () => {
     for (let c = 0; c < map.width; c++) {
       expect(tileAt(map, "walls", 0, c)).toBeGreaterThan(0);
-      expect(tileAt(map, "walls", 1, c)).toBeGreaterThan(0);
     }
   });
 
-  it("baseboard row 2 has wall tiles", () => {
+  it("baseboard row 1 has wall tiles", () => {
     for (let c = 0; c < map.width; c++) {
-      expect(tileAt(map, "walls", 2, c)).toBeGreaterThan(0);
+      expect(tileAt(map, "walls", 1, c)).toBeGreaterThan(0);
     }
   });
 
@@ -189,11 +188,10 @@ describe("tilemap-generator", () => {
   // Collision layer
   // ------------------------------------------------------------------
 
-  it("collision blocks walls (rows 0-2)", () => {
+  it("collision blocks walls (rows 0-1)", () => {
     for (let c = 0; c < map.width; c++) {
       expect(tileAt(map, "collision", 0, c)).toBeGreaterThan(0);
       expect(tileAt(map, "collision", 1, c)).toBeGreaterThan(0);
-      expect(tileAt(map, "collision", 2, c)).toBeGreaterThan(0);
     }
   });
 

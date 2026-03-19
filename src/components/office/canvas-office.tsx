@@ -39,17 +39,17 @@ const CHAR_W = 16;
 const CHAR_H = 32;
 const SHEET_COLS = 7;
 
-/* Floor tile assignment by room type */
-const FLOOR_TILES: Record<string, number> = {
-  main: 0,
-  boss: 3,
-  server: 4,
-  archives: 5,
-  lounge: 6,
-  restroom: 7,
-  hallway: 8,
-  meeting: 1,
-  break: 2,
+/* Floor colors by room type: [fill, gridLine] */
+const FLOOR_COLORS: Record<string, [string, string]> = {
+  main:     ["#c8a878", "#c0a070"],
+  boss:     ["#b08858", "#a87e50"],
+  server:   ["#4a4a5a", "#424252"],
+  archives: ["#b8a080", "#b09878"],
+  lounge:   ["#d4b888", "#ccb080"],
+  restroom: ["#aaaaaa", "#a0a0a0"],
+  hallway:  ["#c4a474", "#bc9c6c"],
+  meeting:  ["#c0a068", "#b89860"],
+  break:    ["#d0b080", "#c8a878"],
 };
 
 /* State -> character animation mapping */
@@ -208,8 +208,6 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
     chars: Map<string, CharRuntime>;
     officeConfig: OfficeConfig | null;
     collisionBlocked: Set<string>;
-    floorImages: HTMLImageElement[];
-    floorLoaded: boolean[];
     wallImage: HTMLImageElement | null;
     wallLoaded: boolean;
     charImages: HTMLImageElement[];
@@ -224,8 +222,6 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
     chars: new Map(),
     officeConfig: null,
     collisionBlocked: new Set(),
-    floorImages: [],
-    floorLoaded: [],
     wallImage: null,
     wallLoaded: false,
     charImages: [],
@@ -246,19 +242,6 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
 
   const loadAssets = useCallback(() => {
     const s = stateRef.current;
-
-    // Floor tiles
-    s.floorImages = [];
-    s.floorLoaded = [];
-    for (let i = 0; i <= 8; i++) {
-      const img = new Image();
-      s.floorImages.push(img);
-      s.floorLoaded.push(false);
-      img.onload = () => {
-        s.floorLoaded[i] = true;
-      };
-      img.src = `/sprites/floors/floor_${i}.png`;
-    }
 
     // Wall tile
     const wallImg = new Image();
@@ -601,11 +584,10 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
     const cw = canvas.width;
     const ch = canvas.height;
 
-    // Integer zoom — fill the container aggressively (slight edge clipping OK)
+    // Fit entire office in view — use Math.min so nothing clips
     const zoomX = cw / (cfg.cols * TILE);
     const zoomY = ch / (cfg.rows * TILE);
-    // Ceil with 0.95 margin — fills screen better than floor
-    const zoom = Math.max(1, Math.ceil(Math.min(zoomX * 0.95, zoomY * 0.95)));
+    const zoom = Math.max(2, Math.floor(Math.min(zoomX, zoomY)));
     s.zoom = zoom;
 
     const tileS = TILE * zoom;
@@ -780,7 +762,7 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
 
   function drawFloors(
     ctx: CanvasRenderingContext2D,
-    s: typeof stateRef.current,
+    _s: typeof stateRef.current,
     cfg: OfficeConfig,
     offsetX: number,
     offsetY: number,
@@ -788,61 +770,69 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
   ) {
     const tileS = TILE * zoom;
 
-    // Build room map: which floor tile index for each cell
-    const floorMap: number[][] = [];
+    // Build room color map: which color key for each cell
+    const colorMap: string[][] = [];
     for (let r = 0; r < cfg.rows; r++) {
-      floorMap[r] = [];
+      colorMap[r] = [];
       for (let c = 0; c < cfg.cols; c++) {
-        // Default: checkerboard
-        floorMap[r][c] = (r + c) % 2 === 0 ? 0 : 1;
+        colorMap[r][c] = "main";
       }
     }
 
     // Overlay room floors
-    const roomFloors: Array<[RoomRect | null, number]> = [
-      [cfg.bossOffice, FLOOR_TILES.boss],
-      [cfg.serverRoom, FLOOR_TILES.server],
-      [cfg.archives, FLOOR_TILES.archives],
-      [cfg.lounge, FLOOR_TILES.lounge],
-      [cfg.restrooms, FLOOR_TILES.restroom],
-      [cfg.hallway, FLOOR_TILES.hallway],
+    const roomFloors: Array<[RoomRect | null, string]> = [
+      [cfg.bossOffice, "boss"],
+      [cfg.serverRoom, "server"],
+      [cfg.archives, "archives"],
+      [cfg.lounge, "lounge"],
+      [cfg.restrooms, "restroom"],
+      [cfg.hallway, "hallway"],
     ];
 
     for (const room of cfg.meetingRooms) {
-      roomFloors.push([room, FLOOR_TILES.meeting]);
+      roomFloors.push([room, "meeting"]);
     }
     if (cfg.breakRoom) {
-      roomFloors.push([cfg.breakRoom, FLOOR_TILES.break]);
+      roomFloors.push([cfg.breakRoom, "break"]);
     }
 
-    for (const [room, floorIdx] of roomFloors) {
+    for (const [room, key] of roomFloors) {
       if (!room) continue;
       for (let r = room.row; r < room.row + room.h; r++) {
         for (let c = room.col; c < room.col + room.w; c++) {
           if (r >= 0 && r < cfg.rows && c >= 0 && c < cfg.cols) {
-            floorMap[r][c] = floorIdx;
+            colorMap[r][c] = key;
           }
         }
       }
     }
 
-    // Draw floor tiles
+    // Draw colored floor tiles with grid lines
     for (let r = 0; r < cfg.rows; r++) {
       for (let c = 0; c < cfg.cols; c++) {
-        const idx = floorMap[r][c];
-        const img = s.floorImages[idx];
-        if (img && s.floorLoaded[idx]) {
-          ctx.drawImage(
-            img,
-            offsetX + c * tileS,
-            offsetY + r * tileS,
-            tileS,
-            tileS,
-          );
-        } else {
-          // Fallback color
-          ctx.fillStyle = idx === 0 ? "#c8b898" : idx === 1 ? "#b8a888" : "#a09080";
-          ctx.fillRect(offsetX + c * tileS, offsetY + r * tileS, tileS, tileS);
+        const key = colorMap[r][c];
+        const colors = FLOOR_COLORS[key] ?? FLOOR_COLORS.main;
+        const [fill, grid] = colors;
+        const x = offsetX + c * tileS;
+        const y = offsetY + r * tileS;
+
+        // Fill rect
+        ctx.fillStyle = fill;
+        ctx.fillRect(x, y, tileS, tileS);
+
+        // Grid lines (1px at every 16px boundary in world space = every tile)
+        ctx.strokeStyle = grid;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, tileS - 1, tileS - 1);
+
+        // For restroom, add an extra cross pattern for tile texture
+        if (key === "restroom") {
+          ctx.beginPath();
+          ctx.moveTo(x + tileS / 2, y);
+          ctx.lineTo(x + tileS / 2, y + tileS);
+          ctx.moveTo(x, y + tileS / 2);
+          ctx.lineTo(x + tileS, y + tileS / 2);
+          ctx.stroke();
         }
       }
     }
@@ -968,9 +958,9 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
   ) {
     const fontSize = Math.max(6, zoom * 3);
     ctx.font = `${fontSize}px sans-serif`;
-    ctx.fillStyle = "rgba(120, 100, 80, 0.7)";
+    ctx.fillStyle = "rgba(100, 80, 60, 0.5)";
     ctx.textAlign = "left";
-    ctx.textBaseline = "bottom";
+    ctx.textBaseline = "top";
 
     const tileS = TILE * zoom;
 
@@ -979,8 +969,8 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
       [cfg.serverRoom, "Server Room"],
       [cfg.archives, "Archives"],
       [cfg.lounge, "Lounge"],
-      [cfg.restrooms, "Restrooms"],
-      [cfg.breakRoom, "Kitchen & Lounge"],
+      [cfg.restrooms, "WC"],
+      [cfg.breakRoom, "Kitchen"],
     ];
     for (let i = 0; i < cfg.meetingRooms.length; i++) {
       labels.push([cfg.meetingRooms[i], `Meeting ${i + 1}`]);
@@ -988,10 +978,11 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
 
     for (const [room, text] of labels) {
       if (!room) continue;
+      // Draw inside the room, offset 1 tile from top-left corner
       ctx.fillText(
         text,
-        offsetX + room.col * tileS + 2,
-        offsetY + room.row * tileS - 1,
+        offsetX + (room.col + 1) * tileS + 2,
+        offsetY + room.row * tileS + 2,
       );
     }
   }

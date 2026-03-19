@@ -212,20 +212,19 @@ export function generateTilemapJSON(
   // 2. WALLS LAYER
   // ================================================================
 
-  // Back wall: rows 0-1
+  // Back wall: row 0 only (thin wall)
   for (let c = 0; c < W; c++) {
     setTile(walls, 0, c, gid(TILE_WALL_BACK));
-    setTile(walls, 1, c, gid(TILE_WALL_BACK));
   }
 
-  // Add windows along back wall row 1
-  for (let c = 4; c < 13; c += 4) {
-    if (c < W) setTile(walls, 1, c, gid(TILE_WINDOW));
+  // Add windows along back wall row 0
+  for (let c = 4; c < W - 2; c += 4) {
+    if (c < W) setTile(walls, 0, c, gid(TILE_WINDOW));
   }
 
-  // Baseboard: row 2
+  // Baseboard: row 1
   for (let c = 0; c < W; c++) {
-    setTile(walls, 2, c, gid(TILE_WALL_BASEBOARD));
+    setTile(walls, 1, c, gid(TILE_WALL_BASEBOARD));
   }
 
   // Room walls for right-side rooms
@@ -357,9 +356,9 @@ export function generateTilemapJSON(
     const lastDeskRow = config.desks[config.desks.length - 1].row;
     // Printer next to last desk row
     setTile(furniture, lastDeskRow, 13, gid(TILE_PRINTER));
-    // Whiteboard on back wall area
+    // Whiteboard on baseboard row
     if (W > 14) {
-      setTile(furniture, 2, 14, gid(TILE_WHITEBOARD));
+      setTile(furniture, 1, 14, gid(TILE_WHITEBOARD));
     }
   }
 
@@ -380,11 +379,10 @@ export function generateTilemapJSON(
 
   const COLLISION_GID = 1; // any non-zero value means blocked
 
-  // Walls are blocked (rows 0-2)
+  // Walls are blocked (rows 0-1)
   for (let c = 0; c < W; c++) {
     setTile(collision, 0, c, COLLISION_GID);
     setTile(collision, 1, c, COLLISION_GID);
-    setTile(collision, 2, c, COLLISION_GID);
   }
 
   // All furniture cells are blocked

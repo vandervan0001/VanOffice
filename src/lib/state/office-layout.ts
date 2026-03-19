@@ -37,7 +37,7 @@ export interface OfficeConfig {
 function generateDesks(count: number): GridPosition[] {
   const desks: GridPosition[] = [];
   const DESK_COLS = [1, 5, 9];
-  const FIRST_DESK_ROW = 3;
+  const FIRST_DESK_ROW = 2;
   const ROW_SPACING = 4; // 2 desk rows + 1 walkway + 1 buffer
 
   for (let i = 0; i < count; i++) {
@@ -87,7 +87,7 @@ function generateMeetingSeats(count: number, meetingRow: number): GridPosition[]
 export function generateOfficeConfig(teamSize: number): OfficeConfig {
   const desksPerRow = 3;
   const deskRows = Math.ceil(teamSize / desksPerRow);
-  const FIRST_DESK_ROW = 3;
+  const FIRST_DESK_ROW = 2;
   const ROW_SPACING = 4;
   const deskZoneEnd = FIRST_DESK_ROW + deskRows * ROW_SPACING;
   const meetingStartRow = deskZoneEnd;
@@ -109,16 +109,16 @@ export function generateOfficeConfig(teamSize: number): OfficeConfig {
   const breakRoom = { row: breakRoomStartRow, col: 1, w: 12, h: breakRoomHeight };
 
   // --- Right-side rooms (cols 15-27) ---
-  const rightSideMinRows = 16;
+  const rightSideMinRows = 15;
   const finalRows = Math.max(totalRows, rightSideMinRows);
 
-  const bossOffice: RoomRect = { row: 3, col: 16, w: 11, h: 4 };
-  const serverRoom: RoomRect = { row: 7, col: 16, w: 5, h: 4 };
-  const archives: RoomRect = { row: 7, col: 21, w: 6, h: 4 };
-  const lounge: RoomRect = { row: 11, col: 16, w: 8, h: 4 };
-  const restrooms: RoomRect = { row: 11, col: 24, w: 3, h: 4 };
+  const bossOffice: RoomRect = { row: 2, col: 16, w: 11, h: 4 };
+  const serverRoom: RoomRect = { row: 6, col: 16, w: 5, h: 4 };
+  const archives: RoomRect = { row: 6, col: 21, w: 6, h: 4 };
+  const lounge: RoomRect = { row: 10, col: 16, w: 8, h: 4 };
+  const restrooms: RoomRect = { row: 10, col: 24, w: 3, h: 4 };
   // Hallway: vertical strip connecting right-side rooms
-  const hallway: RoomRect = { row: 3, col: 15, w: 1, h: 12 };
+  const hallway: RoomRect = { row: 2, col: 15, w: 1, h: 12 };
 
   return {
     cols: totalCols,
