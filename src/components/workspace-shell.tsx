@@ -9,10 +9,10 @@ import { ArtifactPanel } from "@/components/outputs/artifact-panel";
 import { CommandInput } from "@/components/sidebar/command-input";
 import type { ProviderAdapter, WorkspaceSnapshot, WorkspaceStatus } from "@/lib/types";
 
-const PhaserOffice = dynamic(
+const CanvasOffice = dynamic(
   () =>
-    import("@/components/office/phaser-office").then((m) => ({
-      default: m.PhaserOffice,
+    import("@/components/office/canvas-office").then((m) => ({
+      default: m.CanvasOffice,
     })),
   {
     ssr: false,
@@ -309,7 +309,7 @@ export function WorkspaceShell({ providers }: WorkspaceShellProps) {
         {/* LEFT COLUMN: office + deliverables */}
         <div className="flex flex-[3] flex-col gap-3">
           <div className="min-h-[350px] flex-1 overflow-hidden rounded-xl border border-[var(--border)]">
-            <PhaserOffice snapshot={workspace} />
+            <CanvasOffice snapshot={workspace} />
           </div>
           <div className="shrink-0">
             <ArtifactPanel artifacts={workspace.artifacts} />
