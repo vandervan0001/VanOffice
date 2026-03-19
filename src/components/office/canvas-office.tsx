@@ -66,7 +66,7 @@ const STATE_ANIM: Record<
   done: "idle",
 };
 
-/* State -> bubble text */
+/* State -> bubble text (used only as fallback for initial spawn) */
 const STATE_BUBBLE: Record<AgentState, string | null> = {
   idle: null,
   writing: "Drafting...",
@@ -78,6 +78,71 @@ const STATE_BUBBLE: Record<AgentState, string | null> = {
 };
 
 /* ------------------------------------------------------------------ */
+/*  Animation Queue types                                              */
+/* ------------------------------------------------------------------ */
+
+type AnimStep =
+  | { type: "walk"; target: "desk" | "meeting"; minDuration: number }
+  | { type: "sit"; animation: "typing" | "reading" | "idle"; minDuration: number }
+  | { type: "stand"; animation: "idle"; minDuration: number }
+  | { type: "bubble"; text: string; emoji: string; minDuration: number };
+
+/**
+ * Build a sequence of animation steps for a state transition.
+ * Each task state maps to a choreographed sequence so agents
+ * visibly walk, sit, work, and report results.
+ */
+function buildAnimSequence(_prev: AgentState, next: AgentState): AnimStep[] {
+  switch (next) {
+    case "planning":
+      return [
+        { type: "walk", target: "desk", minDuration: 0 },
+        { type: "sit", animation: "typing", minDuration: 3000 },
+        { type: "bubble", text: "Mission framed", emoji: "\uD83D\uDCCB", minDuration: 2000 },
+      ];
+    case "researching":
+      return [
+        { type: "walk", target: "meeting", minDuration: 0 },
+        { type: "stand", animation: "idle", minDuration: 2000 },
+        { type: "walk", target: "desk", minDuration: 0 },
+        { type: "sit", animation: "reading", minDuration: 4000 },
+        { type: "bubble", text: "Research done", emoji: "\uD83D\uDD0D", minDuration: 2000 },
+      ];
+    case "writing":
+      return [
+        { type: "walk", target: "desk", minDuration: 0 },
+        { type: "sit", animation: "typing", minDuration: 5000 },
+        { type: "bubble", text: "Draft ready", emoji: "\uD83D\uDCDD", minDuration: 2000 },
+      ];
+    case "meeting":
+      return [
+        { type: "walk", target: "meeting", minDuration: 0 },
+        { type: "stand", animation: "idle", minDuration: 3000 },
+        { type: "walk", target: "desk", minDuration: 0 },
+        { type: "sit", animation: "typing", minDuration: 2000 },
+      ];
+    case "waiting_for_approval":
+      return [
+        { type: "walk", target: "desk", minDuration: 0 },
+        { type: "sit", animation: "idle", minDuration: 0 },
+        { type: "bubble", text: "Awaiting review", emoji: "\u23F3", minDuration: 0 },
+      ];
+    case "done":
+      return [
+        { type: "walk", target: "desk", minDuration: 0 },
+        { type: "sit", animation: "idle", minDuration: 0 },
+        { type: "bubble", text: "Complete \u2705", emoji: "\u2705", minDuration: 0 },
+      ];
+    case "idle":
+    default:
+      return [
+        { type: "walk", target: "desk", minDuration: 0 },
+        { type: "sit", animation: "idle", minDuration: 0 },
+      ];
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -85,6 +150,7 @@ interface CharRuntime {
   agentId: string;
   displayName: string;
   charIndex: number; // 0-5
+  agentIndex: number; // index in the agents array (for grid position lookups)
   x: number; // pixel position (world)
   y: number;
   targetX: number;
@@ -104,6 +170,10 @@ interface CharRuntime {
   goalCol: number;
   gridRow: number;
   gridCol: number;
+  /* Animation queue */
+  animQueue: AnimStep[];
+  currentAnimStep: AnimStep | null;
+  stepStartTime: number;
 }
 
 interface FurnitureDraw {
@@ -256,14 +326,18 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
       const existing = s.chars.get(agent.agentId);
 
       if (!existing) {
-        // Create new character
+        // Create new character — spawn at desk, no queue
+        const deskPos = agentGridPosition(i, "idle", s.officeConfig);
+        const spawnX = deskPos.col * TILE + TILE / 2;
+        const spawnY = deskPos.row * TILE + TILE / 2;
         const bubbleText = STATE_BUBBLE[agent.state];
         const ch: CharRuntime = {
           agentId: agent.agentId,
           displayName: agent.displayName,
           charIndex: charKey,
-          x: targetX,
-          y: targetY,
+          agentIndex: i,
+          x: spawnX,
+          y: spawnY,
           targetX,
           targetY,
           lastState: agent.state,
@@ -277,58 +351,41 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
           pathStep: 0,
           bubbleText: bubbleText,
           bubbleTimer: bubbleText ? BUBBLE_DISPLAY_SEC : 0,
-          goalRow: pos.row,
-          goalCol: pos.col,
-          gridRow: pos.row,
-          gridCol: pos.col,
+          goalRow: deskPos.row,
+          goalCol: deskPos.col,
+          gridRow: deskPos.row,
+          gridCol: deskPos.col,
+          animQueue: [],
+          currentAnimStep: null,
+          stepStartTime: 0,
         };
+        // If the agent isn't idle on spawn, enqueue the sequence
+        if (agent.state !== "idle") {
+          ch.animQueue = buildAnimSequence("idle", agent.state);
+        }
         s.chars.set(agent.agentId, ch);
       } else {
         // Update existing
         existing.currentState = agent.state;
         existing.displayName = agent.displayName;
         existing.charIndex = charKey;
+        existing.agentIndex = i;
 
         if (existing.lastState !== agent.state) {
-          // State changed
-          const bubbleText = STATE_BUBBLE[agent.state];
-          existing.bubbleText = bubbleText;
-          existing.bubbleTimer = bubbleText ? BUBBLE_DISPLAY_SEC : 0;
+          const prevState = existing.lastState;
           existing.lastState = agent.state;
-          existing.animType = STATE_ANIM[agent.state];
-          existing.sitting =
-            agent.state !== "idle" &&
-            agent.state !== "meeting" &&
-            agent.state !== "done";
-        }
 
-        if (existing.goalRow !== pos.row || existing.goalCol !== pos.col) {
-          existing.goalRow = pos.row;
-          existing.goalCol = pos.col;
-          existing.targetX = targetX;
-          existing.targetY = targetY;
-
-          // Pathfind
-          const path = findPath(
-            s.officeConfig!.rows,
-            s.officeConfig!.cols,
-            s.collisionBlocked,
-            { row: existing.gridRow, col: existing.gridCol },
-            { row: pos.row, col: pos.col },
-          );
-
-          if (path.length > 1) {
-            existing.path = path;
-            existing.pathStep = 1;
-            existing.animType = "walk";
-            existing.sitting = false;
-          } else {
-            // Already there or no path
-            existing.x = targetX;
-            existing.y = targetY;
-            existing.gridRow = pos.row;
-            existing.gridCol = pos.col;
+          // "done" clears queue and goes straight to desk + done bubble
+          if (agent.state === "done") {
+            existing.animQueue = [];
+            existing.currentAnimStep = null;
+            existing.path = [];
+            existing.pathStep = 0;
           }
+
+          // Enqueue the new animation sequence (appended to existing queue)
+          const steps = buildAnimSequence(prevState, agent.state);
+          existing.animQueue.push(...steps);
         }
       }
     }
@@ -345,69 +402,191 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
   /*  Update loop (movement + animation)                               */
   /* ---------------------------------------------------------------- */
 
-  const update = useCallback((dt: number) => {
-    const s = stateRef.current;
-
-    for (const ch of s.chars.values()) {
-      // Bubble timer
-      if (ch.bubbleTimer > 0) {
-        ch.bubbleTimer -= dt;
-        if (ch.bubbleTimer <= 0) {
-          ch.bubbleText = null;
-        }
+  /**
+   * Resolve a walk target ("desk" or "meeting") into a grid position
+   * for a given character using the current office config.
+   */
+  const resolveWalkTarget = useCallback(
+    (ch: CharRuntime, target: "desk" | "meeting"): { row: number; col: number } => {
+      const s = stateRef.current;
+      const cfg = s.officeConfig!;
+      if (target === "meeting") {
+        const pos = agentGridPosition(ch.agentIndex, "meeting", cfg);
+        return { row: pos.row, col: pos.col };
       }
+      const pos = agentGridPosition(ch.agentIndex, "idle", cfg);
+      return { row: pos.row, col: pos.col };
+    },
+    [],
+  );
 
-      // Walking along path
-      if (ch.animType === "walk" && ch.path.length > 0 && ch.pathStep < ch.path.length) {
-        const target = ch.path[ch.pathStep];
-        const tx = target.col * TILE + TILE / 2;
-        const ty = target.row * TILE + TILE / 2;
+  /**
+   * Try to dequeue and start the next animation step for a character.
+   * Returns true if a step was started.
+   */
+  const dequeueStep = useCallback(
+    (ch: CharRuntime): boolean => {
+      if (ch.animQueue.length === 0) return false;
+      const s = stateRef.current;
 
-        const dx = tx - ch.x;
-        const dy = ty - ch.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const step = WALK_SPEED * dt;
+      const step = ch.animQueue.shift()!;
+      ch.currentAnimStep = step;
+      ch.stepStartTime = performance.now();
 
-        // Determine direction
-        if (Math.abs(dx) > Math.abs(dy)) {
-          ch.direction = dx > 0 ? "right" : "left";
-        } else {
-          ch.direction = dy > 0 ? "down" : "up";
-        }
-
-        if (dist <= step) {
-          ch.x = tx;
-          ch.y = ty;
-          ch.gridRow = target.row;
-          ch.gridCol = target.col;
-          ch.pathStep++;
-
-          if (ch.pathStep >= ch.path.length) {
-            // Arrived
-            ch.path = [];
-            ch.pathStep = 0;
-            ch.animType = STATE_ANIM[ch.currentState];
-            ch.sitting =
-              ch.currentState !== "idle" &&
-              ch.currentState !== "meeting" &&
-              ch.currentState !== "done";
-            ch.direction = "down";
-            ch.frameIndex = 0;
+      switch (step.type) {
+        case "walk": {
+          const goal = resolveWalkTarget(ch, step.target);
+          // Already at target? Skip walk.
+          if (ch.gridRow === goal.row && ch.gridCol === goal.col) {
+            ch.currentAnimStep = null;
+            return dequeueStep(ch); // try next step immediately
           }
-        } else {
-          ch.x += (dx / dist) * step;
-          ch.y += (dy / dist) * step;
+          const path = findPath(
+            s.officeConfig!.rows,
+            s.officeConfig!.cols,
+            s.collisionBlocked,
+            { row: ch.gridRow, col: ch.gridCol },
+            goal,
+          );
+          if (path.length > 1) {
+            ch.path = path;
+            ch.pathStep = 1;
+            ch.animType = "walk";
+            ch.sitting = false;
+          } else {
+            // No valid path — snap and move on
+            ch.x = goal.col * TILE + TILE / 2;
+            ch.y = goal.row * TILE + TILE / 2;
+            ch.gridRow = goal.row;
+            ch.gridCol = goal.col;
+            ch.currentAnimStep = null;
+            return dequeueStep(ch);
+          }
+          break;
+        }
+        case "sit":
+          ch.animType = step.animation;
+          ch.sitting = true;
+          ch.direction = "down";
+          ch.frameIndex = 0;
+          break;
+        case "stand":
+          ch.animType = step.animation === "idle" ? "idle" : "idle";
+          ch.sitting = false;
+          ch.direction = "down";
+          ch.frameIndex = 0;
+          break;
+        case "bubble":
+          ch.bubbleText = `${step.emoji} ${step.text}`;
+          // persistent bubble if minDuration === 0
+          ch.bubbleTimer = step.minDuration > 0 ? step.minDuration / 1000 : BUBBLE_DISPLAY_SEC;
+          break;
+      }
+      return true;
+    },
+    [resolveWalkTarget],
+  );
+
+  const update = useCallback(
+    (dt: number) => {
+      const s = stateRef.current;
+
+      for (const ch of s.chars.values()) {
+        // Bubble timer (only count down if timer is positive and not a persistent bubble)
+        if (ch.bubbleTimer > 0) {
+          ch.bubbleTimer -= dt;
+          if (ch.bubbleTimer <= 0) {
+            ch.bubbleText = null;
+          }
+        }
+
+        // --- Animation queue processing ---
+        const step = ch.currentAnimStep;
+
+        if (!step) {
+          // No active step — try to dequeue
+          dequeueStep(ch);
+        }
+
+        if (ch.currentAnimStep) {
+          const elapsed = performance.now() - ch.stepStartTime;
+
+          switch (ch.currentAnimStep.type) {
+            case "walk": {
+              // Walk tile-by-tile along the A* path
+              if (ch.path.length > 0 && ch.pathStep < ch.path.length) {
+                const target = ch.path[ch.pathStep];
+                const tx = target.col * TILE + TILE / 2;
+                const ty = target.row * TILE + TILE / 2;
+
+                const dx = tx - ch.x;
+                const dy = ty - ch.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const moveStep = WALK_SPEED * dt;
+
+                if (Math.abs(dx) > Math.abs(dy)) {
+                  ch.direction = dx > 0 ? "right" : "left";
+                } else {
+                  ch.direction = dy > 0 ? "down" : "up";
+                }
+
+                if (dist <= moveStep) {
+                  ch.x = tx;
+                  ch.y = ty;
+                  ch.gridRow = target.row;
+                  ch.gridCol = target.col;
+                  ch.pathStep++;
+
+                  if (ch.pathStep >= ch.path.length) {
+                    // Arrived — complete walk step
+                    ch.path = [];
+                    ch.pathStep = 0;
+                    ch.direction = "down";
+                    ch.frameIndex = 0;
+                    ch.animType = "idle";
+                    ch.currentAnimStep = null;
+                  }
+                } else {
+                  ch.x += (dx / dist) * moveStep;
+                  ch.y += (dy / dist) * moveStep;
+                }
+              } else {
+                // path exhausted (edge case)
+                ch.currentAnimStep = null;
+              }
+              break;
+            }
+            case "sit":
+            case "stand": {
+              // Wait for minDuration, then complete
+              if (elapsed >= ch.currentAnimStep.minDuration) {
+                ch.currentAnimStep = null;
+              }
+              break;
+            }
+            case "bubble": {
+              // Wait for minDuration, then complete
+              if (ch.currentAnimStep.minDuration > 0 && elapsed >= ch.currentAnimStep.minDuration) {
+                ch.currentAnimStep = null;
+              } else if (ch.currentAnimStep.minDuration === 0) {
+                // persistent bubble — complete step immediately (bubble stays via bubbleTimer)
+                ch.currentAnimStep = null;
+              }
+              break;
+            }
+          }
+        }
+
+        // Animation frame cycling
+        ch.frameTimer += dt;
+        if (ch.frameTimer >= FRAME_DURATION) {
+          ch.frameTimer -= FRAME_DURATION;
+          ch.frameIndex++;
         }
       }
-
-      // Animation frame cycling
-      ch.frameTimer += dt;
-      if (ch.frameTimer >= FRAME_DURATION) {
-        ch.frameTimer -= FRAME_DURATION;
-        ch.frameIndex++;
-      }
-    }
-  }, []);
+    },
+    [dequeueStep],
+  );
 
   /* ---------------------------------------------------------------- */
   /*  Render                                                           */
