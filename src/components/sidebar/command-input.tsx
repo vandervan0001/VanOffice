@@ -144,6 +144,7 @@ export function CommandInput({
         if (!res.ok) throw new Error("Command failed");
         const data = await res.json();
         addSystemMessage(data.response ?? "Executive summary request logged.");
+        onSnapshotUpdate?.();
       } catch (err) {
         addSystemMessage(
           `Failed: ${err instanceof Error ? err.message : "Unknown error"}`,
@@ -193,6 +194,8 @@ export function CommandInput({
       if (!res.ok) throw new Error("Command failed");
       const data = await res.json();
       addSystemMessage(data.response ?? `Command logged: "${text}".`);
+      // Refresh snapshot so UI updates with new deliverables/agents
+      onSnapshotUpdate?.();
     } catch (err) {
       addSystemMessage(
         `Failed: ${err instanceof Error ? err.message : "Unknown error"}`,

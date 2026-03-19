@@ -4,6 +4,8 @@ import { z } from "zod";
 import { appendEvent, getWorkspaceRecord } from "@/lib/db/client";
 import { getWorkspaceSnapshot } from "@/lib/runtime/engine";
 import { getProviderAdapter } from "@/lib/runtime/adapters/providers";
+import { generateArtifactContent } from "@/lib/runtime/scheduler";
+import type { WorkspaceSnapshot } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +13,314 @@ const schema = z.object({
   message: z.string().min(1),
   source: z.enum(["user", "system"]).default("user"),
 });
+
+/* ------------------------------------------------------------------ */
+/*  Action definitions the coordinator can trigger                     */
+/* ------------------------------------------------------------------ */
+
+interface CoordinatorAction {
+  action: "run_agent" | "revise_deliverable" | "add_agent" | "none";
+  agentName?: string;
+  artifactTitle?: string;
+  feedback?: string;
+  newAgentTitle?: string;
+  newAgentPurpose?: string;
+  explanation: string;
+}
+
+function buildCoordinatorPrompt(
+  snapshot: WorkspaceSnapshot,
+  userMessage: string,
+): string {
+  const agentSummary = snapshot.agents
+    .map((a) => `- ${a.displayName} (${a.title}): ${a.state}`)
+    .join("\n");
+  const artifactSummary = snapshot.artifacts
+    .map(
+      (a) =>
+        `- "${a.title}": ${a.status} (v${a.currentVersion}) — ${a.versions[a.versions.length - 1]?.content?.slice(0, 100) ?? "empty"}...`,
+    )
+    .join("\n");
+
+  return [
+    "You are the team coordinator. You manage a team of AI agents who produce deliverables.",
+    "",
+    `Mission: ${snapshot.workspace.title}`,
+    `Brief: ${snapshot.summary ?? "No summary available."}`,
+    "",
+    "Current team:",
+    agentSummary || "(no agents)",
+    "",
+    "Current deliverables:",
+    artifactSummary || "(no deliverables yet)",
+    "",
+    "You can take ONE of these actions:",
+    '1. run_agent — Re-run a specific agent to produce or update their deliverable. Use agentName matching one of the team members above. If the user asks for something specific (e.g. "SWOT analysis"), include detailed instructions in feedback.',
+    '2. revise_deliverable — Revise an existing deliverable with specific feedback. Use artifactTitle matching one of the deliverables above.',
+    '3. add_agent — Create a new agent with a specific role. Specify newAgentTitle (e.g. "SEO Specialist") and newAgentPurpose.',
+    "4. none — Just respond with information, no action needed.",
+    "",
+    "IMPORTANT RULES:",
+    "- Be proactive and creative. If the user gives a vague instruction, make decisions and act.",
+    "- If the user asks for something and you need context they didn't provide, INVENT realistic context and proceed. Don't ask for more info.",
+    '- If the user says "draft a SWOT" or similar, pick the best agent and run them with specific instructions.',
+    "- Always respond with valid JSON.",
+    "",
+    "Respond with ONLY a JSON object like:",
+    '{ "action": "run_agent", "agentName": "Morgan", "feedback": "Draft a detailed SWOT analysis for a B2B SaaS product targeting European SMBs. Invent realistic product details.", "explanation": "I\'ll have Morgan draft the SWOT analysis right away." }',
+    "",
+    "or for no action:",
+    '{ "action": "none", "explanation": "Here is a summary of..." }',
+    "",
+    `User instruction: "${userMessage}"`,
+  ].join("\n");
+}
+
+function parseCoordinatorResponse(text: string): CoordinatorAction {
+  // Try to extract JSON from the response
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        action: parsed.action ?? "none",
+        agentName: parsed.agentName,
+        artifactTitle: parsed.artifactTitle,
+        feedback: parsed.feedback,
+        newAgentTitle: parsed.newAgentTitle,
+        newAgentPurpose: parsed.newAgentPurpose,
+        explanation: parsed.explanation ?? text,
+      };
+    } catch {
+      // JSON parse failed, fall through
+    }
+  }
+  return { action: "none", explanation: text };
+}
+
+async function executeAction(
+  workspaceId: string,
+  action: CoordinatorAction,
+  snapshot: WorkspaceSnapshot,
+  providerId: string,
+): Promise<string> {
+  const provider = getProviderAdapter(providerId);
+  const isReal = providerId !== "mock" && provider.isConfigured();
+
+  switch (action.action) {
+    case "run_agent": {
+      const agent = snapshot.agents.find(
+        (a) =>
+          a.displayName.toLowerCase() === action.agentName?.toLowerCase() ||
+          a.title.toLowerCase().includes(action.agentName?.toLowerCase() ?? ""),
+      );
+      if (!agent) {
+        return `Could not find agent "${action.agentName}". Available: ${snapshot.agents.map((a) => a.displayName).join(", ")}`;
+      }
+
+      // Find the task linked to this agent
+      const task = snapshot.tasks.find((t) => t.ownerAgentId === agent.agentId);
+      if (!task) {
+        return `No task found for agent ${agent.displayName}.`;
+      }
+
+      // Mark task as started
+      await appendEvent(workspaceId, "task.started", {
+        taskId: task.id,
+        agentId: agent.agentId,
+        state: task.workType,
+      });
+
+      // Generate content
+      let content = "";
+      if (isReal) {
+        const customTask = {
+          ...task,
+          description: action.feedback
+            ? `${task.description}\n\nSPECIFIC INSTRUCTION FROM MANAGER: ${action.feedback}`
+            : task.description,
+        };
+        content = await generateArtifactContent(
+          providerId,
+          customTask,
+          agent,
+          snapshot.workspace.title,
+          snapshot.summary ?? "",
+        );
+      } else {
+        content = `# ${agent.title} — Draft\n\n*Generated based on instruction: "${action.feedback ?? "general task"}"*\n\n(Mock content — use a real LLM provider for actual output.)`;
+      }
+
+      // Find or create artifact
+      const existingArtifact = snapshot.artifacts.find(
+        (a) => task.linkedArtifactIds.includes(a.id),
+      );
+
+      if (existingArtifact) {
+        const newVersion = existingArtifact.currentVersion + 1;
+        await appendEvent(workspaceId, "artifact.updated", {
+          artifact: {
+            ...existingArtifact,
+            status: "needs_review" as const,
+            currentVersion: newVersion,
+            versions: [
+              ...existingArtifact.versions,
+              {
+                version: newVersion,
+                createdAt: Date.now(),
+                content,
+                notes: action.feedback
+                  ? `Generated based on: ${action.feedback}`
+                  : "Re-generated by coordinator instruction.",
+                sourceTaskIds: [task.id],
+                citations: [],
+              },
+            ],
+          },
+        });
+      }
+
+      // Mark task as completed
+      await appendEvent(workspaceId, "task.completed", {
+        taskId: task.id,
+        agentId: agent.agentId,
+      });
+
+      return `${agent.displayName} has completed the task. Check the deliverables panel.`;
+    }
+
+    case "revise_deliverable": {
+      const artifact = snapshot.artifacts.find(
+        (a) =>
+          a.title.toLowerCase().includes(action.artifactTitle?.toLowerCase() ?? ""),
+      );
+      if (!artifact) {
+        return `Could not find deliverable "${action.artifactTitle}".`;
+      }
+
+      const task = snapshot.tasks.find((t) =>
+        t.linkedArtifactIds.includes(artifact.id),
+      );
+      if (!task) {
+        return `No task linked to "${artifact.title}".`;
+      }
+
+      const agent = snapshot.agents.find((a) => a.agentId === task.ownerAgentId);
+
+      await appendEvent(workspaceId, "task.started", {
+        taskId: task.id,
+        agentId: task.ownerAgentId,
+        state: task.workType,
+      });
+
+      let revisedContent = "";
+      if (isReal) {
+        const currentContent =
+          artifact.versions[artifact.versions.length - 1]?.content ?? "";
+        const revisionTask = {
+          ...task,
+          description: `REVISION: ${action.feedback ?? "Improve and enhance this deliverable."}\n\nPrevious version:\n${currentContent}`,
+        };
+        revisedContent = await generateArtifactContent(
+          providerId,
+          revisionTask,
+          agent ?? null,
+          snapshot.workspace.title,
+          snapshot.summary ?? "",
+        );
+      }
+
+      const newVersion = artifact.currentVersion + 1;
+      const finalContent =
+        revisedContent ||
+        artifact.versions[artifact.versions.length - 1]?.content ||
+        "";
+
+      await appendEvent(workspaceId, "artifact.updated", {
+        artifact: {
+          ...artifact,
+          status: "needs_review" as const,
+          currentVersion: newVersion,
+          versions: [
+            ...artifact.versions,
+            {
+              version: newVersion,
+              createdAt: Date.now(),
+              content: finalContent,
+              notes: `Revised: ${action.feedback ?? "General improvement"}`,
+              sourceTaskIds: [task.id],
+              citations: [],
+            },
+          ],
+        },
+      });
+
+      await appendEvent(workspaceId, "task.completed", {
+        taskId: task.id,
+        agentId: task.ownerAgentId,
+      });
+
+      return `"${artifact.title}" has been revised. Check the deliverables panel.`;
+    }
+
+    case "add_agent": {
+      // Create a new agent event
+      const newAgentId = `agent-${Date.now()}`;
+      const agentNames = [
+        "Harper", "Phoenix", "Sage", "Dakota", "Finley", "Rowan",
+        "Ellis", "Blair", "Lennox", "Skylar", "Reese", "Emery",
+      ];
+      const usedNames = snapshot.agents.map((a) => a.displayName);
+      const availableName =
+        agentNames.find((n) => !usedNames.includes(n)) ?? `Agent${snapshot.agents.length + 1}`;
+
+      await appendEvent(workspaceId, "agent.created", {
+        agentId: newAgentId,
+        displayName: availableName,
+        title: action.newAgentTitle ?? "Specialist",
+        purpose: action.newAgentPurpose ?? "Support the team with specialized work.",
+      });
+
+      // Create a task for this agent
+      const taskId = `task-${Date.now()}`;
+      const artifactId = `art-${Date.now()}`;
+
+      await appendEvent(workspaceId, "task.created", {
+        taskId,
+        title: `${action.newAgentTitle}: ${action.newAgentPurpose ?? "Specialist work"}`,
+        ownerAgentId: newAgentId,
+        description: action.newAgentPurpose ?? "",
+        workType: "writing",
+        linkedArtifactIds: [artifactId],
+      });
+
+      await appendEvent(workspaceId, "artifact.updated", {
+        artifact: {
+          id: artifactId,
+          title: action.newAgentTitle ?? "New Deliverable",
+          type: "document",
+          status: "draft" as const,
+          currentVersion: 1,
+          versions: [
+            {
+              version: 1,
+              createdAt: Date.now(),
+              content: `# ${action.newAgentTitle}\n\n*Pending — ${availableName} will begin working on this shortly.*`,
+              notes: "Placeholder created with agent.",
+              sourceTaskIds: [taskId],
+              citations: [],
+            },
+          ],
+        },
+      });
+
+      return `New agent "${availableName}" (${action.newAgentTitle}) has been hired and assigned. They'll start working on their deliverable.`;
+    }
+
+    default:
+      return "";
+  }
+}
 
 export async function POST(
   request: Request,
@@ -32,74 +342,60 @@ export async function POST(
     }
 
     const snapshot = await getWorkspaceSnapshot(workspaceId);
-
-    // Build context summary for the coordinator
-    const agentSummary = snapshot.agents
-      .map((a) => `- ${a.displayName} (${a.title}): ${a.state}`)
-      .join("\n");
-    const taskSummary = snapshot.tasks
-      .map((t) => `- [${t.status}] ${t.title} (owner: ${t.ownerAgentId})`)
-      .join("\n");
-    const artifactSummary = snapshot.artifacts
-      .map((a) => `- ${a.title}: ${a.status} (v${a.currentVersion})`)
-      .join("\n");
-
-    const systemPrompt = [
-      "You are the team coordinator for this workspace.",
-      `Mission: ${snapshot.workspace.title}`,
-      `Status: ${snapshot.runStatus}`,
-      "",
-      "Team:",
-      agentSummary || "(no agents yet)",
-      "",
-      "Tasks:",
-      taskSummary || "(no tasks yet)",
-      "",
-      "Deliverables:",
-      artifactSummary || "(no deliverables yet)",
-      "",
-      `The user has given this instruction: "${body.message}"`,
-      "Based on the team's current state and deliverables, determine what action to take.",
-      "Respond with a brief acknowledgment and action plan. Keep it under 150 words.",
-    ].join("\n");
-
-    // Call the LLM
     const providerId = workspace.providerId;
     const provider = getProviderAdapter(providerId);
+
     let responseText: string;
+    let actionResult = "";
 
     if (providerId === "mock" || !provider.isConfigured()) {
-      responseText = `Acknowledged: "${body.message}". The team will process this instruction. (Mock provider — no LLM call made.)`;
+      responseText = `Acknowledged: "${body.message}". (Mock provider — no action taken.)`;
     } else {
       try {
+        // Ask coordinator what to do
+        const coordinatorPrompt = buildCoordinatorPrompt(snapshot, body.message);
         const result = await provider.complete({
-          system: systemPrompt,
+          system: coordinatorPrompt,
           prompt: body.message,
         });
-        responseText = result.text;
+
+        const action = parseCoordinatorResponse(result.text);
+        responseText = action.explanation;
+
+        // Execute the action if any
+        if (action.action !== "none") {
+          actionResult = await executeAction(
+            workspaceId,
+            action,
+            snapshot,
+            providerId,
+          );
+          responseText = `${action.explanation}\n\n${actionResult}`;
+        }
       } catch (err) {
-        console.error("[command] LLM call failed:", err);
-        responseText = `Acknowledged: "${body.message}". (LLM call failed — the command has been logged.)`;
+        console.error("[command] Coordinator failed:", err);
+        responseText = `I understood "${body.message}" but encountered an error executing. Please try again.`;
       }
     }
 
-    // Save the response as an event
+    // Save the response
     await appendEvent(workspaceId, "command.response", {
       message: body.message,
       response: responseText,
     });
 
+    // Return fresh snapshot
+    const updatedSnapshot = await getWorkspaceSnapshot(workspaceId);
+
     return NextResponse.json({
       acknowledged: true,
       message: body.message,
       response: responseText,
-      snapshot,
+      snapshot: updatedSnapshot,
     });
   } catch (cause) {
     return NextResponse.json(
-      {
-        error: cause instanceof Error ? cause.message : "Command failed.",
-      },
+      { error: cause instanceof Error ? cause.message : "Command failed." },
       { status: 400 },
     );
   }
