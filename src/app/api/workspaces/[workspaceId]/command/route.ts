@@ -118,27 +118,35 @@ async function executeAction(
         return `Could not find agent "${action.agentName}". Available: ${snapshot.agents.map((a) => a.displayName).join(", ")}`;
       }
 
-      // Find the task linked to this agent
-      const task = snapshot.tasks.find((t) => t.ownerAgentId === agent.agentId);
+      // Find the task linked to this agent, or create an ad-hoc one
+      let task = snapshot.tasks.find((t) => t.ownerAgentId === agent.agentId);
+      const taskId = task?.id ?? `task-adhoc-${Date.now()}`;
+
       if (!task) {
-        return `No task found for agent ${agent.displayName}.`;
+        // Create ad-hoc task for this command
+        await appendEvent(workspaceId, "task.created", {
+          taskId,
+          title: `${agent.displayName}: ${action.description ?? "Ad-hoc task"}`,
+          ownerAgentId: agent.agentId,
+        });
       }
 
       // Mark task as started
       await appendEvent(workspaceId, "task.started", {
-        taskId: task.id,
+        taskId,
         agentId: agent.agentId,
-        state: task.workType,
+        state: (task?.workType ?? "writing") as "writing",
       });
 
       // Generate content
       let content = "";
       if (isReal) {
+        const baseDesc = task?.description ?? action.description ?? agent.title;
         const customTask = {
-          ...task,
+          ...(task ?? { id: taskId, title: agent.title, ownerAgentId: agent.agentId, dependencies: [], status: "in_progress" as const, description: baseDesc, workType: "writing" as const, acceptanceCriteria: [], linkedArtifactIds: [] }),
           description: action.feedback
-            ? `${task.description}\n\nSPECIFIC INSTRUCTION FROM MANAGER: ${action.feedback}`
-            : task.description,
+            ? `${baseDesc}\n\nSPECIFIC INSTRUCTION FROM MANAGER: ${action.feedback}`
+            : baseDesc,
         };
         content = await generateArtifactContent(
           providerId,
@@ -182,7 +190,7 @@ async function executeAction(
 
       // Mark task as completed
       await appendEvent(workspaceId, "task.completed", {
-        taskId: task.id,
+        taskId,
         agentId: agent.agentId,
       });
 

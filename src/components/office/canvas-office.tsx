@@ -124,13 +124,13 @@ function buildAnimSequence(_prev: AgentState, next: AgentState): AnimStep[] {
     case "waiting_for_approval":
       return [
         { type: "walk", target: "desk", minDuration: 0 },
-        { type: "sit", animation: "idle", minDuration: 0 },
+        { type: "sit", animation: "idle", minDuration: 1000 },
         { type: "bubble", text: "Awaiting review", emoji: "\u23F3", minDuration: 0 },
       ];
     case "done":
       return [
         { type: "walk", target: "desk", minDuration: 0 },
-        { type: "sit", animation: "idle", minDuration: 0 },
+        { type: "sit", animation: "idle", minDuration: 1000 },
         { type: "bubble", text: "Complete \u2705", emoji: "\u2705", minDuration: 0 },
       ];
     case "idle":
@@ -342,9 +342,19 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
           currentAnimStep: null,
           stepStartTime: 0,
         };
-        // If the agent isn't idle on spawn, enqueue the sequence
+        // If the agent isn't idle on spawn, replay a condensed journey
+        // so the user sees them walk/work even if execution is already complete
         if (agent.state !== "idle") {
-          ch.animQueue = buildAnimSequence("idle", agent.state);
+          const replay: AnimStep[] = [
+            { type: "walk", target: "meeting", minDuration: 0 },
+            { type: "stand", animation: "idle", minDuration: 1500 },
+            { type: "bubble", text: "Briefing", emoji: "💬", minDuration: 1000 },
+            { type: "walk", target: "desk", minDuration: 0 },
+            { type: "sit", animation: "typing", minDuration: 2000 + Math.random() * 2000 },
+            { type: "bubble", text: "Working...", emoji: "📝", minDuration: 1500 },
+            ...buildAnimSequence("writing", agent.state),
+          ];
+          ch.animQueue = replay;
         }
         s.chars.set(agent.agentId, ch);
       } else {

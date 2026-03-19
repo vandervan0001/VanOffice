@@ -111,7 +111,7 @@ export const anthropicProvider = remoteProvider(
       },
       body: JSON.stringify({
         model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6",
-        max_tokens: 1200,
+        max_tokens: 4096,
         system: input.system,
         messages: [{ role: "user", content: input.prompt }],
       }),
@@ -148,6 +148,10 @@ export const geminiProvider = remoteProvider(
             parts: [{ text: input.system }],
           },
           contents: [{ parts: [{ text: input.prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 4096,
+            temperature: 0.7,
+          },
         }),
       },
     );
