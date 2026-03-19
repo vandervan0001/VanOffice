@@ -584,10 +584,11 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
     const cw = canvas.width;
     const ch = canvas.height;
 
-    // Fit entire office in view — use Math.min so nothing clips
+    // Fit entire office — always visible, never clipped
+    // Use the smaller of width/height zoom so everything fits
     const zoomX = cw / (cfg.cols * TILE);
     const zoomY = ch / (cfg.rows * TILE);
-    const zoom = Math.max(2, Math.floor(Math.min(zoomX, zoomY)));
+    const zoom = Math.min(zoomX, zoomY) * 0.95; // 5% padding
     s.zoom = zoom;
 
     const tileS = TILE * zoom;
