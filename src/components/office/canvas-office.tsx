@@ -594,8 +594,8 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
     const tileS = TILE * zoom;
     const mapW = cfg.cols * tileS;
     const mapH = cfg.rows * tileS;
-    const offsetX = Math.floor((cw - mapW) / 2);
-    const offsetY = Math.floor((ch - mapH) / 2);
+    const offsetX = Math.max(0, Math.floor((cw - mapW) / 2));
+    const offsetY = 0; // Top-align — no empty space above
 
     // Clear
     ctx.clearRect(0, 0, cw, ch);
@@ -1082,9 +1082,9 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
     // Resize handling
     const resize = () => {
       const rect = container.getBoundingClientRect();
-      const dpr = 1; // Use 1 for pixel-perfect rendering
-      canvas.width = Math.floor(rect.width * dpr);
-      canvas.height = Math.floor(rect.height * dpr);
+      if (rect.width < 1 || rect.height < 1) return;
+      canvas.width = Math.floor(rect.width);
+      canvas.height = Math.floor(rect.height);
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
     };
@@ -1092,6 +1092,7 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
 
     const ro = new ResizeObserver(resize);
     ro.observe(container);
+    window.addEventListener("resize", resize);
 
     // Game loop
     let rafId = 0;
@@ -1125,6 +1126,7 @@ export function CanvasOffice({ snapshot }: CanvasOfficeProps) {
       stopped = true;
       cancelAnimationFrame(rafId);
       ro.disconnect();
+      window.removeEventListener("resize", resize);
     };
   }, [loadAssets, syncAgents, update, render]);
 
